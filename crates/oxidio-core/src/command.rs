@@ -59,6 +59,9 @@ pub enum Command {
     Prev,
     Seek { position: Duration },
 
+    // Misc
+    Reload,
+
     // UI commands
     Vis,
     Volume { level: Option<u32> },
@@ -236,6 +239,9 @@ impl Command {
             }
             "home" | "~" => Ok( Command::Home ),
 
+            // Misc
+            "reload" | "rl" => Ok( Command::Reload ),
+
             // Playback commands
             "play" | "p" => Ok( Command::Play ),
             "pause" | "pa" => Ok( Command::Pause ),
@@ -287,6 +293,7 @@ impl Command {
             Command::Next => "Next track",
             Command::Prev => "Previous track",
             Command::Seek { .. } => "Seek to position",
+            Command::Reload => "Reload last loaded playlist",
             Command::Vis => "Toggle visualizer",
             Command::Volume { .. } => "Set volume (0-100)",
             Command::Help => "Show help",
@@ -356,6 +363,7 @@ Playback Commands:
 Other Commands:
   /vis            Toggle visualizer      [v]
   /vol [0-100]    Set volume             [+/-]
+  /reload         Reload last playlist   [R]
   /help           Show this help         [?]
   /quit           Exit oxidio            [q]"#
 }
@@ -414,6 +422,7 @@ const COMMAND_DEFS: &[CommandDef] = &[
     CommandDef { name: "prev", hint: "", subs: &[] },
     CommandDef { name: "queue", hint: "", subs: QUEUE_SUBS },
     CommandDef { name: "quit", hint: "", subs: &[] },
+    CommandDef { name: "reload", hint: "", subs: &[] },
     CommandDef { name: "repeat", hint: "[off|one|all]", subs: &[] },
     CommandDef { name: "search", hint: "<term>", subs: &[] },
     CommandDef { name: "seek", hint: "<time>", subs: &[] },

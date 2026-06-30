@@ -6,6 +6,7 @@ mod discord;
 mod input;
 mod integrations;
 mod media_controls;
+mod popup;
 mod settings;
 mod view;
 
@@ -43,6 +44,7 @@ use oxidio_protocol::{ AppCommand, StateUpdate };
 
 
 /// Entry type for the Playlists view.
+#[derive( Clone )]
 enum PlaylistEntry {
     /// M3U playlist file (.m3u)
     M3u( String ),
@@ -117,6 +119,12 @@ struct App {
     // Playlists view state
     playlist_entries: Vec<PlaylistEntry>,
     playlist_list_selected: usize,
+
+    // Last loaded playlist (for quick reload)
+    last_loaded: Option<PlaylistEntry>,
+
+    // Popup state (input or confirm dialog)
+    popup_state: Option<popup::PopupState>,
 }
 
 
@@ -185,6 +193,8 @@ impl App {
             settings_selected: 0,
             playlist_entries: Vec::new(),
             playlist_list_selected: 0,
+            last_loaded: None,
+            popup_state: None,
         })
     }
 
@@ -253,6 +263,20 @@ impl App {
 
     /// Handles a key event.
     fn handle_key( &mut self, code: KeyCode, modifiers: KeyModifiers ) {
+        // Popup steals all input when active
+        if let Some( mut popup ) = self.popup_state.take() {
+            match popup::handle_popup_key( &mut popup, code ) {
+                popup::PopupResult::StillActive => {
+                    self.popup_state = Some( popup );
+                }
+                popup::PopupResult::Confirmed( name ) => {
+                    self.execute_popup_action( popup.action, name );
+                }
+                popup::PopupResult::Cancelled => {}
+            }
+            return;
+        }
+
         match self.input_mode {
             InputMode::Normal => self.handle_normal_key( code, modifiers ),
             InputMode::Command => self.handle_command_key( code ),
@@ -453,6 +477,9 @@ impl App {
                 self.send_command( AppCommand::ClearPlaylist );
                 self.set_status( "Playlist cleared" );
             }
+            KeyCode::Char( 'R' ) => {
+                self.reload_last_playlist();
+            }
             KeyCode::Char( 'r' ) => {
                 // Cycle repeat mode
                 let playlist_arc = self.player.playlist();
@@ -573,6 +600,22 @@ impl App {
                         self.set_status( "Cannot save parent directory" );
                     } else {
                         self.set_status( "Only directories can be saved as playlist" );
+                    }
+                }
+            }
+            KeyCode::Char( 'M' ) => {
+                // Save directory as M3U playlist (with name prompt)
+                if let Some( entry ) = self.browser.selected_entry() {
+                    if entry.is_dir && entry.name != ".." {
+                        self.popup_state = Some( popup::PopupState::new_input(
+                            "Save M3U Playlist".to_string(),
+                            entry.name.clone(),
+                            popup::PendingAction::SaveM3uFromBrowser( entry.path.clone() ),
+                        ));
+                    } else if entry.name == ".." {
+                        self.set_status( "Cannot save parent directory" );
+                    } else {
+                        self.set_status( "Only directories can be saved as M3U" );
                     }
                 }
             }
@@ -1018,6 +1061,7 @@ impl App {
                 self.set_status( "Saving playlist..." );
             }
             Command::Load { name } => {
+                self.last_loaded = Some( PlaylistEntry::M3u( name.clone() ) );
                 self.send_command( AppCommand::LoadPlaylist { name } );
                 self.set_status( "Loading playlist..." );
             }
@@ -1038,6 +1082,7 @@ impl App {
                     self.set_status( "Saving directory playlist..." );
                 }
                 DirPlCmd::Load { name } => {
+                    self.last_loaded = Some( PlaylistEntry::DirPl( name.clone() ) );
                     self.send_command( AppCommand::LoadDirPlaylist { name } );
                     self.set_status( "Loading directory playlist..." );
                 }
@@ -1057,6 +1102,7 @@ impl App {
                 self.set_status( format!( "Visualizer: {}", self.visualizer_style.name() ) );
             }
             Command::Volume { level } => {
+                // Volume command handled below
                 if let Some( level ) = level {
                     self.volume = ( level as f32 / 100.0 ).clamp( 0.0, 1.0 );
                     self.send_command( AppCommand::SetVolume { level: self.volume } );
@@ -1064,6 +1110,9 @@ impl App {
                 } else {
                     self.set_status( format!( "Volume: {}%", ( self.volume * 100.0 ) as i32 ) );
                 }
+            }
+            Command::Reload => {
+                self.reload_last_playlist();
             }
         }
         Ok(())
@@ -1243,6 +1292,92 @@ impl App {
     }
 
 
+    /// Reloads the last loaded playlist, if any.
+    fn reload_last_playlist( &mut self ) {
+        if let Some( ref entry ) = self.last_loaded {
+            match entry {
+                PlaylistEntry::M3u( name ) => {
+                    self.send_command( AppCommand::LoadPlaylist { name: name.clone() } );
+                    self.set_status( format!( "Reloaded playlist: {}", name ) );
+                }
+                PlaylistEntry::DirPl( name ) => {
+                    self.send_command( AppCommand::LoadDirPlaylist { name: name.clone() } );
+                    self.set_status( format!( "Reloaded directory playlist: {}", name ) );
+                }
+            }
+        } else {
+            self.set_status( "Nothing to reload" );
+        }
+    }
+
+
+    /// Executes the action from a confirmed popup.
+    fn execute_popup_action( &mut self, action: popup::PendingAction, name: Option<String> ) {
+        match action {
+            popup::PendingAction::SaveM3uFromBrowser( dir ) => {
+                let playlist_name = name.unwrap_or_else( || "untitled".to_string() );
+
+                // Scan directory for audio files
+                let mut scanner = LibraryScanner::new();
+                scanner.add_root( dir.clone() );
+
+                match scanner.scan() {
+                    Ok( tracks ) => {
+                        let paths: Vec<PathBuf> = tracks.into_iter().map( |t| t.path ).collect();
+                        let count = paths.len();
+
+                        if count == 0 {
+                            self.set_status( "No audio files found in directory" );
+                            return;
+                        }
+
+                        // Add to playlist
+                        {
+                            let playlist_arc = self.player.playlist();
+                            let mut playlist = playlist_arc.write().unwrap();
+                            playlist.clear();
+                            playlist.add_many( paths );
+                        }
+
+                        // Save as M3U
+                        if let Some( dir ) = oxidio_core::Playlist::ensure_playlist_dir() {
+                            let path = dir.join( format!( "{}.m3u", playlist_name ) );
+                            let playlist_arc = self.player.playlist();
+                            let playlist = playlist_arc.read().unwrap();
+                            if let Err( e ) = playlist.save( &path ) {
+                                self.set_status( format!( "Save error: {}", e ) );
+                            } else {
+                                self.set_status( format!(
+                                    "Saved M3U playlist: {} ({} tracks)", playlist_name, count
+                                ));
+                            }
+                        }
+
+                        self.last_loaded = Some( PlaylistEntry::M3u( playlist_name ) );
+                    }
+                    Err( e ) => {
+                        self.set_status( format!( "Scan error: {}", e ) );
+                    }
+                }
+            }
+
+            popup::PendingAction::DeletePlaylist( entry ) => {
+                match &entry {
+                    PlaylistEntry::M3u( name ) => {
+                        self.send_command( AppCommand::DeletePlaylist { name: name.clone() } );
+                        self.set_status( format!( "Deleted playlist: {}", name ) );
+                    }
+                    PlaylistEntry::DirPl( name ) => {
+                        self.send_command( AppCommand::DeleteDirPlaylist { name: name.clone() } );
+                        self.set_status( format!( "Deleted directory playlist: {}", name ) );
+                    }
+                }
+                self.refresh_playlist_lists();
+            }
+        }
+    }
+
+
     /// Handles keyboard input for the Playlists view.
     fn handle_playlists_key( &mut self, code: KeyCode ) {
         match code {
@@ -1269,6 +1404,7 @@ impl App {
             }
             KeyCode::Enter => {
                 if let Some( entry ) = self.playlist_entries.get( self.playlist_list_selected ) {
+                    self.last_loaded = Some( entry.clone() );
                     match entry {
                         PlaylistEntry::M3u( name ) => {
                             self.send_command( AppCommand::LoadPlaylist { name: name.clone() } );
@@ -1284,17 +1420,11 @@ impl App {
             }
             KeyCode::Char( 'd' ) => {
                 if let Some( entry ) = self.playlist_entries.get( self.playlist_list_selected ) {
-                    match entry {
-                        PlaylistEntry::M3u( name ) => {
-                            self.send_command( AppCommand::DeletePlaylist { name: name.clone() } );
-                            self.set_status( format!( "Deleted playlist: {}", name ) );
-                        }
-                        PlaylistEntry::DirPl( name ) => {
-                            self.send_command( AppCommand::DeleteDirPlaylist { name: name.clone() } );
-                            self.set_status( format!( "Deleted directory playlist: {}", name ) );
-                        }
-                    }
-                    self.refresh_playlist_lists();
+                    self.popup_state = Some( popup::PopupState::new_confirm(
+                        "Delete Playlist".to_string(),
+                        format!( "Delete '{}'?", entry.name() ),
+                        popup::PendingAction::DeletePlaylist( entry.clone() ),
+                    ));
                 }
             }
             // Playback controls
@@ -1592,6 +1722,12 @@ fn draw_ui( frame: &mut Frame, app: &mut App ) {
 
     // Status bar
     draw_status_bar( frame, app, chunks[3] );
+
+    // Popup overlay (rendered last, on top of everything)
+    if let Some( ref popup ) = app.popup_state {
+        let popup_area = popup::centered_rect( 50, 30, frame.area() );
+        popup::draw_popup( frame, popup, popup_area );
+    }
 }
 
 
@@ -2333,8 +2469,8 @@ fn draw_status_bar( frame: &mut Frame, app: &App, area: Rect ) {
                 ( msg.clone(), Style::default().fg( Color::Green ) )
             } else {
                 let hint = match app.view_mode {
-                    ViewMode::Playlist => " [/]Cmd [Tab]View [Space]Play [n/p]Skip [s]Stop [e]Edit [r]Repeat [c]Clr [i]Info [v]Vis [+/-]Vol [q]Quit ",
-                    ViewMode::Browser => " [/]Cmd [Tab]View [jk]Nav [Enter]Open [a]Add [S]Save [h]Up [Space]Play [n/p]Skip [~]Home [+/-]Vol [q]Quit ",
+                    ViewMode::Playlist => " [/]Cmd [Tab]View [Space]Play [n/p]Skip [s]Stop [e]Edit [r]Repeat [R]Reload [c]Clr [i]Info [v]Vis [+/-]Vol [q]Quit ",
+                    ViewMode::Browser => " [/]Cmd [Tab]View [jk]Nav [Enter]Open [a]Add [S]SaveDir [M]SaveM3U [h]Up [Space]Play [n/p]Skip [~]Home [+/-]Vol [q]Quit ",
                     ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [Space]Play [n/p]Skip [+/-]Vol [Tab]View [Esc]Close [q]Quit ",
                     ViewMode::Help => " [jk]Scroll [PgUp/PgDn]Page [Esc/?]Close [q]Quit ",
                     ViewMode::TrackInfo => " [Space]Play [n/p←→]Skip [Ctrl←→]Seek [+/-]Vol [m]Mute [Tab]View [i/Esc]Close [q]Quit ",
