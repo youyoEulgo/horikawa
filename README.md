@@ -14,6 +14,7 @@ A lightweight Terminal User Interface (TUI) music player written in Rust.
 - **File Browser** - Navigate local directories, add files/folders to playlist, quick-save as playlist
 - **Session Persistence** - Remembers playlist, position, volume, and settings
 - **Playlist Browser View** - Browse saved M3U and directory playlists in a dedicated TUI view
+- **Popup Dialogs** - Input and confirmation popups for naming playlists, confirming deletions, etc.
 - **Slash Commands** - `/playlist`, `/dirplaylist`, `/queue`, `/goto`, `/search`, `/seek`, etc.
 - **Platform Integration**
   - Windows: System Media Transport Controls (lock screen, media keys)
@@ -90,6 +91,7 @@ oxidio /path/to/music/
 | `Enter` | Play selected track |
 | `s` | Stop |
 | `r` | Cycle repeat mode (Off → One → All) |
+| `R` | Reload last loaded playlist |
 | `S` | Toggle shuffle |
 | `c` | Clear playlist |
 | `e` | Toggle edit mode |
@@ -109,6 +111,7 @@ oxidio /path/to/music/
 | `h` / `Backspace` | Go to parent directory |
 | `a` | Add selected file or folder to playlist |
 | `S` | Save selected directory as directory playlist |
+| `M` | Save selected directory as M3U playlist (name prompt) |
 | `R` | Refresh directory listing |
 | `~` | Go to home directory |
 | `g` / `Home` | Go to first entry |
@@ -196,6 +199,7 @@ Type `/` to enter command mode, then use any of these:
 | `/shuffle` | Toggle shuffle |
 | `/repeat [off\|one\|all]` | Set repeat mode |
 | `/vol [0-100]` | Set or show volume |
+| `/reload` | Reload last loaded playlist |
 | `/vis` | Toggle visualizer |
 | `/help` | Show help |
 | `/quit` | Quit application |
