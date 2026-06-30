@@ -8,10 +8,13 @@ A lightweight Terminal User Interface (TUI) music player written in Rust.
 
 - **Audio Playback** - Play, pause, stop, seek, volume control, next/previous track
 - **Multiple Formats** - MP3, FLAC, OGG, WAV, M4A/AAC, OPUS, WMA, AIFF, ALAC
-- **Visualizers** - Bars, spectrum analyzer, waveform, and level meter
-- **Playlist Management** - Shuffle, repeat modes (off/one/all), reordering, save/load
-- **File Browser** - Navigate local and network (SMB/UNC) paths
+- **Visualizers** - Bars, spectrum analyzer, waveform, and level meter (~30 FPS)
+- **Playlist Management** - Shuffle, repeat modes (off/one/all), reordering, dedup, save/load (M3U)
+- **Directory Playlists** - Save directory references; auto-scan for audio files on load (`.oxidio`)
+- **File Browser** - Navigate local directories, add files/folders to playlist, quick-save as playlist
 - **Session Persistence** - Remembers playlist, position, volume, and settings
+- **Playlist Browser View** - Browse saved M3U and directory playlists in a dedicated TUI view
+- **Slash Commands** - `/playlist`, `/dirplaylist`, `/queue`, `/goto`, `/search`, `/seek`, etc.
 - **Platform Integration**
   - Windows: System Media Transport Controls (lock screen, media keys)
   - Discord Rich Presence
@@ -54,56 +57,167 @@ oxidio /path/to/music/
 
 ## Keyboard Shortcuts
 
-### Playback
+### Global (all views)
+
+| Key | Action |
+|-----|--------|
+| `Tab` / `Shift+Tab` | Next / previous view |
+| `/` | Enter slash command mode |
+| `q` | Quit |
+| `Esc` | Return to Playlist view |
+
+### Playback (all views)
 
 | Key | Action |
 |-----|--------|
 | `Space` | Play / Pause |
-| `s` | Stop |
-| `n` | Next track |
-| `p` | Previous track |
-| `<` / `>` | Seek backward / forward |
-| `+` / `-` | Volume up / down |
+| `n` / `→` | Next track |
+| `p` / `←` | Previous track |
+| `Ctrl+→` | Seek forward 10s |
+| `Ctrl+←` | Seek backward 10s |
+| `+` / `=` | Volume up |
+| `-` / `_` | Volume down |
+| `m` | Mute / unmute |
 
-### Navigation
+### Playlist view
 
 | Key | Action |
 |-----|--------|
-| `↑` / `k` | Move up |
-| `↓` / `j` | Move down |
-| `g` | Go to start |
-| `G` | Go to end |
-| `Tab` | Next view |
-| `Shift+Tab` | Previous view |
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `g` / `Home` | Go to first track |
+| `G` / `End` | Go to last track |
+| `Enter` | Play selected track |
+| `s` | Stop |
+| `r` | Cycle repeat mode (Off → One → All) |
+| `S` | Toggle shuffle |
+| `c` | Clear playlist |
+| `e` | Toggle edit mode |
+| `d` | Delete track (edit mode) |
+| `Shift+J` | Move track down (edit mode) |
+| `Shift+K` | Move track up (edit mode) |
+| `v` | Cycle visualizer style |
+| `i` | Show track info |
+
+### Browser view
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `Enter` | Enter directory / add file to playlist |
+| `h` / `Backspace` | Go to parent directory |
+| `a` | Add selected file or folder to playlist |
+| `S` | Save selected directory as directory playlist |
+| `R` | Refresh directory listing |
+| `~` | Go to home directory |
+| `g` / `Home` | Go to first entry |
+| `G` / `End` | Go to last entry |
+
+### Playlists view
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `Enter` | Load selected playlist |
+| `d` | Delete selected playlist |
+
+### Help view
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Scroll up |
+| `↓` / `j` | Scroll down |
+| `PgUp` / `PgDn` | Page up / down |
+| `?` / `Esc` | Close help |
+
+### Track Info view
+
+| Key | Action |
+|-----|--------|
+| `i` / `Esc` | Close track info |
+
+### Visualizer view
+
+| Key | Action |
+|-----|--------|
+| `v` | Cycle visualizer style (Bars → Spectrum → Waveform → Level Meter) |
+| `Esc` | Close visualizer |
+
+### Settings view
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `Enter` | Toggle setting |
+| `Esc` | Close settings |
+
+## Slash Commands
+
+Type `/` to enter command mode, then use any of these:
+
+### Queue
+
+| Command | Alias | Action |
+|---------|-------|--------|
+| `/queue add <path>` | `/q a` | Add file or folder to queue |
+| `/queue remove` | `/q rm` | Remove selected track |
+| `/queue clear` | `/q cl` | Clear queue |
+| `/queue dedup` | `/q` | Remove duplicate tracks |
 
 ### Playlist
 
-| Key | Action |
-|-----|--------|
-| `S` | Toggle shuffle |
-| `r` | Cycle repeat mode |
-| `e` | Edit mode |
-| `d` | Delete track (edit mode) |
-| `J` / `K` | Reorder tracks (edit mode) |
-| `c` | Clear playlist |
+| Command | Alias | Action |
+|---------|-------|--------|
+| `/playlist save <name>` | `/pl save` | Save current playlist (M3U) |
+| `/playlist load <name>` | `/pl load` | Load saved playlist |
+| `/playlist list` | `/pl ls` | List saved playlists |
+| `/playlist delete <name>` | `/pl del` | Delete saved playlist |
 
-### Views
+### Directory Playlist
 
-| Key | Action |
-|-----|--------|
-| `v` | Visualizer |
-| `i` | Track info |
-| `m` | Cycle visualizer style |
-| `?` | Help |
-| `/` | Command mode |
-| `Esc` | Exit current mode |
-| `q` | Quit |
+| Command | Alias | Action |
+|---------|-------|--------|
+| `/dirplaylist save <name> [dir]` | `/dirpl save` | Save directory as playlist (`.oxidio`) |
+| `/dirplaylist load <name>` | `/dirpl load` | Load & scan directory playlist |
+| `/dirplaylist list` | `/dirpl ls` | List saved directory playlists |
+| `/dirplaylist delete <name>` | `/dirpl del` | Delete directory playlist |
+
+### Navigation & Playback
+
+| Command | Action |
+|---------|--------|
+| `/goto <path>` | Navigate browser to path |
+| `/search <term>` | Filter current view |
+| `/home` | Go to home directory |
+| `/seek <time>` | Seek to position (e.g., `1:30`) |
+| `/shuffle` | Toggle shuffle |
+| `/repeat [off\|one\|all]` | Set repeat mode |
+| `/vol [0-100]` | Set or show volume |
+| `/vis` | Toggle visualizer |
+| `/help` | Show help |
+| `/quit` | Quit application |
+
+## Views
+
+Press **Tab** / **Shift+Tab** to cycle through views:
+
+```
+Playlist → Browser → Playlists → Track Info → Visualizer → Settings
+```
 
 ## Configuration
 
 Settings are stored at:
-- Linux: `~/.config/oxidio/settings.json`
+- Linux/macOS: `~/.config/oxidio/settings.json`
 - Windows: `%APPDATA%\oxidio\settings.json`
+
+Playlists are stored at:
+- Linux/macOS: `~/.local/share/oxidio/playlists/`
+- macOS: `~/Library/Application Support/oxidio/playlists/`
+- Windows: `Music/Oxidio/`
 
 ```json
 {
