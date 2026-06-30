@@ -559,6 +559,23 @@ impl App {
                     }
                 }
             }
+            KeyCode::Char( 'S' ) => {
+                // Save selected directory as a directory playlist
+                if let Some( entry ) = self.browser.selected_entry() {
+                    if entry.is_dir && entry.name != ".." {
+                        let dir_name = entry.name.clone();
+                        self.send_command( AppCommand::SaveDirPlaylist {
+                            name: dir_name.clone(),
+                            directory: entry.path.to_string_lossy().to_string(),
+                        });
+                        self.set_status( format!( "Saved directory playlist: {}", dir_name ) );
+                    } else if entry.name == ".." {
+                        self.set_status( "Cannot save parent directory" );
+                    } else {
+                        self.set_status( "Only directories can be saved as playlist" );
+                    }
+                }
+            }
             KeyCode::Char( 'R' ) => {
                 let _ = self.browser.refresh();
                 self.set_status( "Refreshed" );
@@ -1500,7 +1517,7 @@ fn main() -> Result<()> {
         terminal.draw( |frame| draw_ui( frame, &mut app ) )?;
 
         // Handle events with timeout
-        if event::poll( Duration::from_millis( 100 ) )? {
+        if event::poll( Duration::from_millis( 33 ) )? {
             match event::read()? {
                 Event::Key( key ) if key.kind == KeyEventKind::Press => {
                     app.handle_key( key.code, key.modifiers );
@@ -2316,13 +2333,13 @@ fn draw_status_bar( frame: &mut Frame, app: &App, area: Rect ) {
                 ( msg.clone(), Style::default().fg( Color::Green ) )
             } else {
                 let hint = match app.view_mode {
-                    ViewMode::Playlist => " [/]Cmd [Tab]Views [Space]Play [e]Edit [v]Vis [i]Info [?]Help [q]Quit ",
-                    ViewMode::Browser => " [/]Cmd [Tab]Views [Enter]Open [a]Add [~]Home [?]Help ",
-                    ViewMode::Playlists => " [↑↓]Navigate [Enter]Load [d]Delete [Tab]Views [Esc]Close ",
-                    ViewMode::Help => " [?]Close [Esc]Close ",
-                    ViewMode::TrackInfo => " [Tab]Views [Space]Play [←→]Skip [i/Esc]Close ",
-                    ViewMode::Visualizer => " [Tab]Views [Space]Play [←→]Skip [v]Style [Esc]Close ",
-                    ViewMode::Settings => " [↑↓]Navigate [Enter/Space]Toggle [Tab]Views [Esc]Close ",
+                    ViewMode::Playlist => " [/]Cmd [Tab]View [Space]Play [n/p]Skip [s]Stop [e]Edit [r]Repeat [c]Clr [i]Info [v]Vis [+/-]Vol [q]Quit ",
+                    ViewMode::Browser => " [/]Cmd [Tab]View [jk]Nav [Enter]Open [a]Add [S]Save [h]Up [Space]Play [n/p]Skip [~]Home [+/-]Vol [q]Quit ",
+                    ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [Space]Play [n/p]Skip [+/-]Vol [Tab]View [Esc]Close [q]Quit ",
+                    ViewMode::Help => " [jk]Scroll [PgUp/PgDn]Page [Esc/?]Close [q]Quit ",
+                    ViewMode::TrackInfo => " [Space]Play [n/p←→]Skip [Ctrl←→]Seek [+/-]Vol [m]Mute [Tab]View [i/Esc]Close [q]Quit ",
+                    ViewMode::Visualizer => " [Space]Play [n/p←→]Skip [Ctrl←→]Seek [v]Style [+/-]Vol [m]Mute [Tab]View [Esc]Close [q]Quit ",
+                    ViewMode::Settings => " [jk]Nav [Enter]Toggle [Space]Play [n/p]Skip [+/-]Vol [m]Mute [Tab]View [Esc]Close [q]Quit ",
                 };
                 ( hint.to_string(), Style::default().fg( Color::DarkGray ) )
             };
