@@ -2196,7 +2196,7 @@ fn draw_vis_bars( lines: &mut Vec<Line<'static>>, data: &[f32; 32], height: usiz
         for bar_idx in 0..num_bars {
             let data_idx = ( bar_idx * 32 ) / num_bars;
             let amp = data[ data_idx.min( 31 ) ];
-            let scaled_amp = ( amp * 4.0 ).min( 1.0 );
+            let scaled_amp = amp.powf( 0.5 );
 
             if scaled_amp >= threshold {
                 let level = ((( scaled_amp - threshold ) * height as f32 * 8.0 ) as usize ).min( 7 );
@@ -2237,7 +2237,7 @@ fn draw_vis_spectrum( lines: &mut Vec<Line<'static>>, data: &[f32; 32], height: 
         for bar_idx in 0..num_bars {
             let data_idx = ( bar_idx * 32 ) / num_bars;
             let amp = data[ data_idx.min( 31 ) ];
-            let scaled_amp = ( amp * 4.0 ).min( 1.0 );
+            let scaled_amp = amp.powf( 0.5 );
 
             if scaled_amp >= threshold {
                 let level = ((( scaled_amp - threshold ) * half_height as f32 * 8.0 ) as usize ).min( 7 );
@@ -2266,7 +2266,7 @@ fn draw_vis_waveform( lines: &mut Vec<Line<'static>>, data: &[f32; 32], height: 
         let amp = data[ data_idx.min( 31 ) ];
 
         // Convert amplitude to y offset from center
-        let y_offset = ( amp * 3.0 * center_row as f32 ) as isize;
+        let y_offset = ( amp.powf( 0.5 ) * center_row as f32 ) as isize;
         let y = ( center_row as isize - y_offset ).clamp( 0, ( height - 1 ) as isize ) as usize;
 
         grid[ y ][ x ] = '●';
@@ -2303,9 +2303,9 @@ fn draw_vis_level_meter( lines: &mut Vec<Line<'static>>, data: &[f32; 32], heigh
     let total_amp: f32 = data.iter().sum::<f32>() / 32.0;
 
     let meter_width = width.saturating_sub( 10 );
-    let left_filled = (( left_amp * 4.0 ).min( 1.0 ) * meter_width as f32 ) as usize;
-    let right_filled = (( right_amp * 4.0 ).min( 1.0 ) * meter_width as f32 ) as usize;
-    let total_filled = (( total_amp * 4.0 ).min( 1.0 ) * meter_width as f32 ) as usize;
+    let left_filled = ( left_amp.powf( 0.5 ) * meter_width as f32 ) as usize;
+    let right_filled = ( right_amp.powf( 0.5 ) * meter_width as f32 ) as usize;
+    let total_filled = ( total_amp.powf( 0.5 ) * meter_width as f32 ) as usize;
 
     // Create meter characters
     let create_meter = |filled: usize, total: usize| -> String {
