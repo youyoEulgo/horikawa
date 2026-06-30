@@ -12,7 +12,7 @@ use tokio::sync::{ broadcast, mpsc };
 
 use oxidio_core::player::PlaybackState;
 use oxidio_core::library::LibraryScanner;
-use oxidio_core::{ Player, Playlist, RepeatMode };
+use oxidio_core::{ Player, Playlist, RepeatMode, DirectoryPlaylist };
 
 use oxidio_protocol::{
     AppCommand, BrowserEntry, BrowserSnapshot, PlaybackStateValue,
@@ -707,6 +707,84 @@ impl CommandProcessor {
                     } else {
                         let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
                             message: format!( "Playlist not found: {}", name ),
+                        });
+                    }
+                }
+            }
+
+            // Directory playlist management
+            AppCommand::SaveDirPlaylist { name, directory } => {
+                let dpl = DirectoryPlaylist::new( name.clone(), directory.clone() );
+                match dpl.save() {
+                    Ok( _ ) => {
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                            message: format!( "Saved directory playlist: {}", name ),
+                        });
+                    }
+                    Err( e ) => {
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                            message: format!( "Save error: {}", e ),
+                        });
+                    }
+                }
+            }
+            AppCommand::LoadDirPlaylist { name } => {
+                match DirectoryPlaylist::load( &name ) {
+                    Ok( dpl ) => {
+                        match dpl.scan() {
+                            Ok( paths ) => {
+                                let _ = self.player.stop();
+                                let playlist_arc = self.player.playlist();
+                                let mut playlist = playlist_arc.write().unwrap();
+                                playlist.clear();
+                                playlist.add_many( paths );
+                                drop( playlist );
+                                self.broadcast_playlist();
+                                let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                                    message: format!( "Loaded directory playlist: {}", name ),
+                                });
+                            }
+                            Err( e ) => {
+                                let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                                    message: format!( "Scan error: {}", e ),
+                                });
+                            }
+                        }
+                    }
+                    Err( e ) => {
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                            message: format!( "Load error: {}", e ),
+                        });
+                    }
+                }
+            }
+            AppCommand::ListDirPlaylists => {
+                match DirectoryPlaylist::list() {
+                    Ok( names ) => {
+                        let msg = if names.is_empty() {
+                            "No saved directory playlists".to_string()
+                        } else {
+                            format!( "Dir Playlists: {}", names.join( ", " ) )
+                        };
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage { message: msg } );
+                    }
+                    Err( e ) => {
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                            message: format!( "List error: {}", e ),
+                        });
+                    }
+                }
+            }
+            AppCommand::DeleteDirPlaylist { name } => {
+                match DirectoryPlaylist::delete( &name ) {
+                    Ok( () ) => {
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                            message: format!( "Deleted directory playlist: {}", name ),
+                        });
+                    }
+                    Err( e ) => {
+                        let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
+                            message: format!( "Delete error: {}", e ),
                         });
                     }
                 }

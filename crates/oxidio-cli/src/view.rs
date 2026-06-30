@@ -55,6 +55,9 @@ pub enum ViewMode {
     /// Browser view - file/directory browser.
     Browser,
 
+    /// Playlists view - browse saved playlists (M3U and directory playlists).
+    Playlists,
+
     /// Help overlay - shows available commands.
     Help,
 
@@ -74,7 +77,8 @@ impl ViewMode {
     pub fn next_tab( self ) -> Self {
         match self {
             ViewMode::Playlist => ViewMode::Browser,
-            ViewMode::Browser => ViewMode::TrackInfo,
+            ViewMode::Browser => ViewMode::Playlists,
+            ViewMode::Playlists => ViewMode::TrackInfo,
             ViewMode::TrackInfo => ViewMode::Visualizer,
             ViewMode::Visualizer => ViewMode::Settings,
             ViewMode::Settings => ViewMode::Playlist,
@@ -88,7 +92,8 @@ impl ViewMode {
         match self {
             ViewMode::Playlist => ViewMode::Settings,
             ViewMode::Browser => ViewMode::Playlist,
-            ViewMode::TrackInfo => ViewMode::Browser,
+            ViewMode::Playlists => ViewMode::Browser,
+            ViewMode::TrackInfo => ViewMode::Playlists,
             ViewMode::Visualizer => ViewMode::TrackInfo,
             ViewMode::Settings => ViewMode::Visualizer,
             ViewMode::Help => ViewMode::Help, // Help stays on Help until dismissed

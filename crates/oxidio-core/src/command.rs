@@ -43,6 +43,9 @@ pub enum Command {
     Shuffle,
     Repeat { mode: Option<RepeatModeArg> },
 
+    // Directory playlist commands
+    DirPl { sub: DirPlCmd },
+
     // Navigation commands
     Goto { path: PathBuf },
     Search { term: String },
@@ -70,6 +73,16 @@ pub enum RepeatModeArg {
     Off,
     One,
     All,
+}
+
+
+/// Subcommand for directory playlist operations.
+#[derive( Debug, Clone, PartialEq )]
+pub enum DirPlCmd {
+    Save { name: String, directory: Option<PathBuf> },
+    Load { name: String },
+    List,
+    Delete { name: String },
 }
 
 
@@ -170,6 +183,40 @@ impl Command {
                     other => Err( CommandError::Unknown( format!( "queue {}", other ) ) ),
                 }
             }
+            "dirplaylist" | "dirpl" | "dpl" => {
+                let sub_args = args
+                    .ok_or_else( || CommandError::MissingArgument( "subcommand (save|load|list|delete)".into() ) )?;
+                let mut sub_parts = sub_args.splitn( 2, ' ' );
+                let sub_cmd = sub_parts.next().unwrap_or( "" ).to_lowercase();
+                let sub_arg = sub_parts.next().map( |s| s.trim() );
+
+                match sub_cmd.as_str() {
+                    "list" | "ls" => Ok( Command::DirPl { sub: DirPlCmd::List } ),
+                    "save" => {
+                        let name = sub_arg
+                            .ok_or_else( || CommandError::MissingArgument( "playlist name".into() ) )?;
+                        // Check if there's a directory path after the name
+                        let (name, directory) = if let Some( ( n, d ) ) = name.split_once( ' ' ) {
+                            ( n.to_string(), Some( PathBuf::from( d.trim() ) ) )
+                        } else {
+                            ( name.to_string(), None )
+                        };
+                        Ok( Command::DirPl { sub: DirPlCmd::Save { name, directory } } )
+                    }
+                    "load" => {
+                        let name = sub_arg
+                            .ok_or_else( || CommandError::MissingArgument( "playlist name".into() ) )?;
+                        Ok( Command::DirPl { sub: DirPlCmd::Load { name: name.to_string() } } )
+                    }
+                    "delete" | "del" | "rm" => {
+                        let name = sub_arg
+                            .ok_or_else( || CommandError::MissingArgument( "playlist name".into() ) )?;
+                        Ok( Command::DirPl { sub: DirPlCmd::Delete { name: name.to_string() } } )
+                    }
+                    "" => Err( CommandError::MissingArgument( "subcommand (save|load|list|delete)".into() ) ),
+                    other => Err( CommandError::Unknown( format!( "dirplaylist {}", other ) ) ),
+                }
+            }
             "shuffle" | "sh" => Ok( Command::Shuffle ),
             "repeat" | "rep" => {
                 let mode = args.map( |s| s.parse() ).transpose()?;
@@ -228,6 +275,7 @@ impl Command {
             Command::Load { .. } => "Load playlist",
             Command::ListPlaylists => "List saved playlists",
             Command::DeletePlaylist { .. } => "Delete saved playlist",
+            Command::DirPl { .. } => "Directory playlist",
             Command::Shuffle => "Toggle shuffle",
             Command::Repeat { .. } => "Set repeat mode",
             Command::Goto { .. } => "Navigate to path",
@@ -286,6 +334,12 @@ Playlist Commands:
   /shuffle            Toggle shuffle mode
   /repeat [mode]      Set repeat (off/one/all)
 
+Directory Playlist Commands:
+  /dirpl save <name> [dir]  Save directory as playlist
+  /dirpl load <name>        Load a directory playlist
+  /dirpl list               List saved dir playlists
+  /dirpl delete <name>      Delete a directory playlist
+
 Navigation Commands:
   /goto <path>    Navigate browser to path
   /search <term>  Filter current view
@@ -338,8 +392,18 @@ const QUEUE_SUBS: &[CommandDef] = &[
 ];
 
 
+/// Subcommand definitions for /dirplaylist.
+const DIRPL_SUBS: &[CommandDef] = &[
+    CommandDef { name: "delete", hint: "<name>", subs: &[] },
+    CommandDef { name: "list", hint: "", subs: &[] },
+    CommandDef { name: "load", hint: "<name>", subs: &[] },
+    CommandDef { name: "save", hint: "<name> [dir]", subs: &[] },
+];
+
+
 /// All top-level command definitions, sorted alphabetically.
 const COMMAND_DEFS: &[CommandDef] = &[
+    CommandDef { name: "dirplaylist", hint: "", subs: DIRPL_SUBS },
     CommandDef { name: "goto", hint: "<path>", subs: &[] },
     CommandDef { name: "help", hint: "", subs: &[] },
     CommandDef { name: "home", hint: "", subs: &[] },

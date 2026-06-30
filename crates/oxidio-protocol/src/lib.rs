@@ -48,6 +48,12 @@ pub enum AppCommand {
     ListPlaylists,
     DeletePlaylist { name: String },
 
+    // Directory playlist management
+    SaveDirPlaylist { name: String, directory: String },
+    LoadDirPlaylist { name: String },
+    ListDirPlaylists,
+    DeleteDirPlaylist { name: String },
+
     // Settings
     ToggleSetting { key: String },
 

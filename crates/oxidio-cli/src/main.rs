@@ -33,13 +33,32 @@ use input::{ InputBuffer, InputMode };
 use view::{ ViewMode, VisualizerStyle };
 
 use oxidio_core::{
-    command::{ self, get_suggestion, get_next_word_chunk, RepeatModeArg },
+    command::{ self, get_suggestion, get_next_word_chunk, DirPlCmd, RepeatModeArg },
     library::LibraryScanner,
     player::PlaybackState,
     Command, Player, RepeatMode,
 };
 use oxidio_ctl::{ CommandProcessor, CommandSender, ControlChannel, ProcessorSettings };
 use oxidio_protocol::{ AppCommand, StateUpdate };
+
+
+/// Entry type for the Playlists view.
+enum PlaylistEntry {
+    /// M3U playlist file (.m3u)
+    M3u( String ),
+    /// Directory playlist file (.oxidio)
+    DirPl( String ),
+}
+
+
+impl PlaylistEntry {
+    /// Returns the display name of the playlist.
+    fn name( &self ) -> &str {
+        match self {
+            PlaylistEntry::M3u( n ) | PlaylistEntry::DirPl( n ) => n,
+        }
+    }
+}
 
 
 /// Application state.
@@ -94,6 +113,10 @@ struct App {
     // Settings
     settings: settings::Settings,
     settings_selected: usize,
+
+    // Playlists view state
+    playlist_entries: Vec<PlaylistEntry>,
+    playlist_list_selected: usize,
 }
 
 
@@ -160,6 +183,8 @@ impl App {
             status_clear_at: None,
             settings: settings::Settings::load(),
             settings_selected: 0,
+            playlist_entries: Vec::new(),
+            playlist_list_selected: 0,
         })
     }
 
@@ -305,11 +330,17 @@ impl App {
             }
             KeyCode::Tab => {
                 self.view_mode = self.view_mode.next_tab();
+                if self.view_mode == ViewMode::Playlists {
+                    self.refresh_playlist_lists();
+                }
                 return;
             }
             KeyCode::BackTab => {
                 // Shift+Tab goes to previous view
                 self.view_mode = self.view_mode.prev_tab();
+                if self.view_mode == ViewMode::Playlists {
+                    self.refresh_playlist_lists();
+                }
                 return;
             }
             KeyCode::Char( '?' ) => {
@@ -317,7 +348,7 @@ impl App {
                 return;
             }
             KeyCode::Esc => {
-                if self.view_mode == ViewMode::Help || self.view_mode == ViewMode::TrackInfo || self.view_mode == ViewMode::Visualizer {
+                if self.view_mode == ViewMode::Help || self.view_mode == ViewMode::TrackInfo || self.view_mode == ViewMode::Visualizer || self.view_mode == ViewMode::Playlists {
                     self.view_mode = ViewMode::Playlist;
                     return;
                 }
@@ -334,6 +365,7 @@ impl App {
         match self.view_mode {
             ViewMode::Playlist => self.handle_playlist_key( code, modifiers ),
             ViewMode::Browser => self.handle_browser_key( code ),
+            ViewMode::Playlists => self.handle_playlists_key( code ),
             ViewMode::Help => self.handle_help_key( code ),
             ViewMode::TrackInfo => self.handle_track_info_key( code, modifiers ),
             ViewMode::Visualizer => self.handle_visualizer_key( code, modifiers ),
@@ -978,6 +1010,27 @@ impl App {
             Command::DeletePlaylist { name } => {
                 self.send_command( AppCommand::DeletePlaylist { name } );
             }
+            Command::DirPl { sub } => match sub {
+                DirPlCmd::Save { name, directory } => {
+                    let dir = directory
+                        .unwrap_or_else( || self.browser.current_dir().to_path_buf() );
+                    self.send_command( AppCommand::SaveDirPlaylist {
+                        name,
+                        directory: dir.to_string_lossy().to_string(),
+                    });
+                    self.set_status( "Saving directory playlist..." );
+                }
+                DirPlCmd::Load { name } => {
+                    self.send_command( AppCommand::LoadDirPlaylist { name } );
+                    self.set_status( "Loading directory playlist..." );
+                }
+                DirPlCmd::List => {
+                    self.send_command( AppCommand::ListDirPlaylists );
+                }
+                DirPlCmd::Delete { name } => {
+                    self.send_command( AppCommand::DeleteDirPlaylist { name } );
+                }
+            },
             Command::Seek { position } => {
                 self.send_command( AppCommand::Seek { position_secs: position.as_secs_f64() } );
                 self.set_status( format!( "Seeking to {}:{:02}", position.as_secs() / 60, position.as_secs() % 60 ) );
@@ -1121,6 +1174,141 @@ impl App {
 
         if let Err( e ) = oxidio_core::Playlist::save_session( &state ) {
             tracing::warn!( "Failed to save session state: {}", e );
+        }
+    }
+
+
+    /// Refreshes the list of saved playlists from the playlist directory.
+    fn refresh_playlist_lists( &mut self ) {
+        self.playlist_entries.clear();
+        self.playlist_list_selected = 0;
+
+        let dir = match oxidio_core::Playlist::playlist_dir() {
+            Some( d ) if d.exists() => d,
+            _ => return,
+        };
+
+        let mut m3u_names = Vec::new();
+        let mut dirpl_names = Vec::new();
+
+        if let Ok( entries ) = std::fs::read_dir( &dir ) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let extension = path.extension()
+                    .and_then( |e| e.to_str() )
+                    .unwrap_or( "" );
+                let stem = path.file_stem()
+                    .and_then( |s| s.to_str() )
+                    .unwrap_or( "" );
+
+                // Skip session auto-save
+                if stem == "_last" {
+                    continue;
+                }
+
+                match extension {
+                    "m3u" => m3u_names.push( stem.to_string() ),
+                    "oxidio" => dirpl_names.push( stem.to_string() ),
+                    _ => {}
+                }
+            }
+        }
+
+        m3u_names.sort();
+        dirpl_names.sort();
+
+        self.playlist_entries.extend(
+            m3u_names.into_iter().map( PlaylistEntry::M3u )
+        );
+        self.playlist_entries.extend(
+            dirpl_names.into_iter().map( PlaylistEntry::DirPl )
+        );
+    }
+
+
+    /// Handles keyboard input for the Playlists view.
+    fn handle_playlists_key( &mut self, code: KeyCode ) {
+        match code {
+            KeyCode::Char( 'q' ) => {
+                self.should_quit = true;
+            }
+            KeyCode::Esc => {
+                self.view_mode = ViewMode::Playlist;
+            }
+            KeyCode::Up | KeyCode::Char( 'k' ) => {
+                if !self.playlist_entries.is_empty() {
+                    self.playlist_list_selected = if self.playlist_list_selected == 0 {
+                        self.playlist_entries.len() - 1
+                    } else {
+                        self.playlist_list_selected - 1
+                    };
+                }
+            }
+            KeyCode::Down | KeyCode::Char( 'j' ) => {
+                if !self.playlist_entries.is_empty() {
+                    self.playlist_list_selected = ( self.playlist_list_selected + 1 )
+                        % self.playlist_entries.len();
+                }
+            }
+            KeyCode::Enter => {
+                if let Some( entry ) = self.playlist_entries.get( self.playlist_list_selected ) {
+                    match entry {
+                        PlaylistEntry::M3u( name ) => {
+                            self.send_command( AppCommand::LoadPlaylist { name: name.clone() } );
+                            self.set_status( format!( "Loading playlist: {}", name ) );
+                        }
+                        PlaylistEntry::DirPl( name ) => {
+                            self.send_command( AppCommand::LoadDirPlaylist { name: name.clone() } );
+                            self.set_status( format!( "Loading directory playlist: {}", name ) );
+                        }
+                    }
+                    self.view_mode = ViewMode::Playlist;
+                }
+            }
+            KeyCode::Char( 'd' ) => {
+                if let Some( entry ) = self.playlist_entries.get( self.playlist_list_selected ) {
+                    match entry {
+                        PlaylistEntry::M3u( name ) => {
+                            self.send_command( AppCommand::DeletePlaylist { name: name.clone() } );
+                            self.set_status( format!( "Deleted playlist: {}", name ) );
+                        }
+                        PlaylistEntry::DirPl( name ) => {
+                            self.send_command( AppCommand::DeleteDirPlaylist { name: name.clone() } );
+                            self.set_status( format!( "Deleted directory playlist: {}", name ) );
+                        }
+                    }
+                    self.refresh_playlist_lists();
+                }
+            }
+            // Playback controls
+            KeyCode::Char( ' ' ) => {
+                self.send_command( AppCommand::TogglePlayback );
+            }
+            KeyCode::Char( 'n' ) => self.play_next(),
+            KeyCode::Char( 'p' ) => self.play_previous(),
+            KeyCode::Left => self.play_previous(),
+            KeyCode::Right => self.play_next(),
+            KeyCode::Char( '+' ) | KeyCode::Char( '=' ) => {
+                self.volume = ( self.volume + 0.05 ).min( 1.0 );
+                self.send_command( AppCommand::SetVolume { level: self.volume } );
+                self.set_status( format!( "Volume: {}%", ( self.volume * 100.0 ) as i32 ) );
+            }
+            KeyCode::Char( '-' ) | KeyCode::Char( '_' ) => {
+                self.volume = ( self.volume - 0.05 ).max( 0.0 );
+                self.send_command( AppCommand::SetVolume { level: self.volume } );
+                self.set_status( format!( "Volume: {}%", ( self.volume * 100.0 ) as i32 ) );
+            }
+            KeyCode::Char( 'm' ) => {
+                if self.volume > 0.0 {
+                    self.volume = 0.0;
+                    self.set_status( "Muted" );
+                } else {
+                    self.volume = 1.0;
+                    self.set_status( "Volume: 100%" );
+                }
+                self.send_command( AppCommand::SetVolume { level: self.volume } );
+            }
+            _ => {}
         }
     }
 }
@@ -1363,6 +1551,7 @@ fn draw_ui( frame: &mut Frame, app: &mut App ) {
         ViewMode::TrackInfo => "TRACK INFO",
         ViewMode::Visualizer => "VISUALIZER",
         ViewMode::Settings => "SETTINGS",
+        ViewMode::Playlists => "PLAYLISTS",
     };
 
     let header = Paragraph::new( format!( "  OXIDIO - {}", view_indicator ) )
@@ -1378,6 +1567,7 @@ fn draw_ui( frame: &mut Frame, app: &mut App ) {
         ViewMode::TrackInfo => draw_track_info( frame, app, chunks[1] ),
         ViewMode::Visualizer => draw_visualizer( frame, app, chunks[1] ),
         ViewMode::Settings => draw_settings( frame, app, chunks[1] ),
+        ViewMode::Playlists => draw_playlists( frame, app, chunks[1] ),
     }
 
     // Now playing
@@ -2007,6 +2197,38 @@ fn draw_vis_level_meter( lines: &mut Vec<Line<'static>>, data: &[f32; 32], heigh
 }
 
 
+fn draw_playlists( frame: &mut Frame, app: &mut App, area: Rect ) {
+    let count = app.playlist_entries.len();
+
+    let items: Vec<ListItem> = app.playlist_entries.iter().map( |entry| {
+        let ( tag, tag_color ) = match entry {
+            PlaylistEntry::M3u( _ ) => ( "[M3U]", Color::Cyan ),
+            PlaylistEntry::DirPl( _ ) => ( "[DIR]", Color::Green ),
+        };
+        let label = format!( "  {}  {}", tag, entry.name() );
+        ListItem::new( label ).style( Style::default().fg( tag_color ) )
+    }).collect();
+
+    let title = format!( " Playlists ({}) ", count );
+
+    let mut state = ListState::default();
+    if !app.playlist_entries.is_empty() {
+        state.select( Some( app.playlist_list_selected ) );
+    }
+
+    let list = List::new( items )
+        .block( Block::default()
+            .title( title )
+            .borders( Borders::ALL )
+            .border_style( Style::default().fg( Color::Cyan ) )
+        )
+        .highlight_style( Style::default().bg( Color::DarkGray ) )
+        .highlight_symbol( ">> " );
+
+    frame.render_stateful_widget( list, area, &mut state );
+}
+
+
 fn draw_settings( frame: &mut Frame, app: &App, area: Rect ) {
     let web_locked = app.cli_web_override.is_some();
     let web_enabled = if let Some( locked ) = app.cli_web_override {
@@ -2096,6 +2318,7 @@ fn draw_status_bar( frame: &mut Frame, app: &App, area: Rect ) {
                 let hint = match app.view_mode {
                     ViewMode::Playlist => " [/]Cmd [Tab]Views [Space]Play [e]Edit [v]Vis [i]Info [?]Help [q]Quit ",
                     ViewMode::Browser => " [/]Cmd [Tab]Views [Enter]Open [a]Add [~]Home [?]Help ",
+                    ViewMode::Playlists => " [↑↓]Navigate [Enter]Load [d]Delete [Tab]Views [Esc]Close ",
                     ViewMode::Help => " [?]Close [Esc]Close ",
                     ViewMode::TrackInfo => " [Tab]Views [Space]Play [←→]Skip [i/Esc]Close ",
                     ViewMode::Visualizer => " [Tab]Views [Space]Play [←→]Skip [v]Style [Esc]Close ",
