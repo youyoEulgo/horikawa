@@ -640,7 +640,8 @@ impl App {
                 self.edit_mode = !self.edit_mode;
                 if self.edit_mode {
                     // Persistent — stays until edit mode is turned off
-                    self.status_message = Some("Edit mode: Shift+J/K to move, d to delete, c to clear".into());
+                    self.status_message =
+                        Some("Edit mode: Shift+J/K to move, d to delete, c to clear".into());
                     self.status_clear_at = None;
                 } else {
                     self.status_message = None;
@@ -2644,31 +2645,55 @@ fn draw_visualizer(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(visualizer, area);
 }
 
-fn draw_vis_bars(lines: &mut Vec<Line<'static>>, data: &[f32; 32], height: usize, width: usize) {
+fn draw_vis_bars(lines: &mut Vec<Line<'static>>, data: &[f32], height: usize, width: usize) {
     let vis_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-    let bar_width = 2;
-    let max_bars = width / (bar_width + 1);
-    let num_bars = max_bars.min(32);
+    // Pick a fixed bar width based on terminal width.
+    let bw = if width >= 200 {
+        3u16
+    } else if width >= 100 {
+        2
+    } else {
+        1
+    };
+    let gap = 1u16;
+    let total_per_bar = (bw + gap) as u16;
+    let num_bars = (width as u16 / total_per_bar)
+        .min(data.len().max(1) as u16)
+        .max(1) as usize;
+    let total_width = (num_bars as u16 * total_per_bar).saturating_sub(gap) as usize;
+    let pad_left = (width.saturating_sub(total_width)) / 2;
 
     for row in (0..height).rev() {
         let threshold = (row as f32 + 0.5) / height as f32;
-        let mut line_content = String::new();
+        let mut line_content = String::with_capacity(width);
+        for _ in 0..pad_left {
+            line_content.push(' ');
+        }
 
         for bar_idx in 0..num_bars {
-            let data_idx = (bar_idx * 32) / num_bars;
-            let amp = data[data_idx.min(31)];
-            let scaled_amp = amp.powf(0.5);
+            // Map bar to spectrum range with RMS
+            let start = (bar_idx * data.len()) / num_bars;
+            let end = ((bar_idx + 1) * data.len()) / num_bars;
+            let amp: f32 =
+                data[start..end].iter().map(|s| s * s).sum::<f32>() / (end - start) as f32;
+            let scaled_amp = amp.sqrt().powf(0.35).min(1.0);
 
             if scaled_amp >= threshold {
                 let level = (((scaled_amp - threshold) * height as f32 * 8.0) as usize).min(7);
-                let ch = vis_chars[level];
-                line_content.push(ch);
-                line_content.push(ch);
+                for _ in 0..bw {
+                    line_content.push(vis_chars[level]);
+                }
             } else {
-                line_content.push_str("  ");
+                for _ in 0..bw {
+                    line_content.push(' ');
+                }
             }
-            line_content.push(' ');
+            if bar_idx + 1 < num_bars {
+                for _ in 0..gap {
+                    line_content.push(' ');
+                }
+            }
         }
 
         lines.push(Line::from(Span::styled(
@@ -2678,75 +2703,96 @@ fn draw_vis_bars(lines: &mut Vec<Line<'static>>, data: &[f32; 32], height: usize
     }
 }
 
-fn draw_vis_spectrum(
-    lines: &mut Vec<Line<'static>>,
-    data: &[f32; 32],
-    height: usize,
-    width: usize,
-) {
+fn draw_vis_spectrum(lines: &mut Vec<Line<'static>>, data: &[f32], height: usize, width: usize) {
     let vis_chars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 
-    let bar_width = 1;
-    let max_bars = width / (bar_width + 1);
-    let num_bars = max_bars.min(32);
+    let bw = if width >= 200 {
+        3u16
+    } else if width >= 100 {
+        2
+    } else {
+        1
+    };
+    let gap = 1u16;
+    let total_per_bar = (bw + gap) as u16;
+    let num_bars = (width as u16 / total_per_bar)
+        .min(data.len().max(1) as u16)
+        .max(1) as usize;
+    let total_width = (num_bars as u16 * total_per_bar).saturating_sub(gap) as usize;
+    let pad_left = (width.saturating_sub(total_width)) / 2;
     let half_height = height / 2;
 
-    // Draw mirrored spectrum (top half mirrors bottom half)
-    for row in 0..height {
-        let is_top_half = row < half_height;
-        let row_in_half = if is_top_half {
-            half_height - row - 1
-        } else {
-            row - half_height
-        };
-        let threshold = (row_in_half as f32 + 0.5) / half_height as f32;
+    // Draw mirrored spectrum.
+    //
+    // Top half: lower block chars fill from cell bottom (which sits on the
+    // center line), so bars naturally grow UP from center.
+    //
+    // Bottom half: line-level mirror of the top half. Lower block chars fill
+    // from the cell bottom, which in the bottom half is away from center.
+    // The silhouette (envelope of bar heights) mirrors correctly; partial-fill
+    // characters within individual cells may appear to grow from the opposite
+    // direction, but the overall shape is symmetric.
+    let mut top_lines: Vec<String> = Vec::with_capacity(half_height);
 
-        let mut line_content = String::new();
-
-        for bar_idx in 0..num_bars {
-            let data_idx = (bar_idx * 32) / num_bars;
-            let amp = data[data_idx.min(31)];
-            let scaled_amp = amp.powf(0.5);
-
-            if scaled_amp >= threshold {
-                let level = (((scaled_amp - threshold) * half_height as f32 * 8.0) as usize).min(7);
-                let ch = vis_chars[level];
-                line_content.push(ch);
-            } else {
-                line_content.push(' ');
-            }
+    for row in (0..half_height).rev() {
+        let threshold = (row as f32 + 0.5) / half_height as f32;
+        let mut line_content = String::with_capacity(width);
+        for _ in 0..pad_left {
             line_content.push(' ');
         }
 
-        let color = if is_top_half {
-            Color::Magenta
-        } else {
-            Color::Cyan
-        };
+        for bar_idx in 0..num_bars {
+            let start = (bar_idx * data.len()) / num_bars;
+            let end = ((bar_idx + 1) * data.len()) / num_bars;
+            let amp: f32 =
+                data[start..end].iter().map(|s| s * s).sum::<f32>() / (end - start) as f32;
+            let scaled_amp = amp.sqrt().powf(0.35).min(1.0);
+
+            if scaled_amp >= threshold {
+                let level = (((scaled_amp - threshold) * half_height as f32 * 8.0) as usize).min(7);
+                for _ in 0..bw {
+                    line_content.push(vis_chars[level]);
+                }
+            } else {
+                for _ in 0..bw {
+                    line_content.push(' ');
+                }
+            }
+            if bar_idx + 1 < num_bars {
+                for _ in 0..gap {
+                    line_content.push(' ');
+                }
+            }
+        }
+        top_lines.push(line_content);
+    }
+
+    for line in top_lines.iter() {
         lines.push(Line::from(Span::styled(
-            line_content,
-            Style::default().fg(color),
+            line.clone(),
+            Style::default().fg(Color::Magenta),
+        )));
+    }
+    for line in top_lines.iter().rev() {
+        lines.push(Line::from(Span::styled(
+            line.clone(),
+            Style::default().fg(Color::Cyan),
         )));
     }
 }
 
-fn draw_vis_waveform(
-    lines: &mut Vec<Line<'static>>,
-    data: &[f32; 32],
-    height: usize,
-    width: usize,
-) {
+fn draw_vis_waveform(lines: &mut Vec<Line<'static>>, data: &[f32], height: usize, width: usize) {
     let center_row = height / 2;
 
     // Build the waveform grid
     let mut grid: Vec<Vec<char>> = vec![vec![' '; width]; height];
 
     for x in 0..width {
-        let data_idx = (x * 32) / width;
-        let amp = data[data_idx.min(31)];
+        let data_idx = (x * data.len()) / width;
+        let amp = data[data_idx.min(data.len() - 1)];
 
         // Convert amplitude to y offset from center
-        let y_offset = (amp.powf(0.5) * center_row as f32) as isize;
+        let y_offset = (amp.powf(0.35) * center_row as f32) as isize;
         let y = (center_row as isize - y_offset).clamp(0, (height - 1) as isize) as usize;
 
         grid[y][x] = '●';
@@ -2778,21 +2824,17 @@ fn draw_vis_waveform(
     }
 }
 
-fn draw_vis_level_meter(
-    lines: &mut Vec<Line<'static>>,
-    data: &[f32; 32],
-    height: usize,
-    width: usize,
-) {
-    // Calculate average amplitude for left and right channels (simple stereo simulation)
-    let left_amp: f32 = data[0..16].iter().sum::<f32>() / 16.0;
-    let right_amp: f32 = data[16..32].iter().sum::<f32>() / 16.0;
-    let total_amp: f32 = data.iter().sum::<f32>() / 32.0;
+fn draw_vis_level_meter(lines: &mut Vec<Line<'static>>, data: &[f32], height: usize, width: usize) {
+    // Average amplitude for left and right channels (simple stereo simulation)
+    let mid = data.len() / 2;
+    let left_amp: f32 = data[..mid].iter().sum::<f32>() / mid.max(1) as f32;
+    let right_amp: f32 = data[mid..].iter().sum::<f32>() / (data.len() - mid).max(1) as f32;
+    let total_amp: f32 = data.iter().sum::<f32>() / data.len().max(1) as f32;
 
     let meter_width = width.saturating_sub(10);
-    let left_filled = (left_amp.powf(0.5) * meter_width as f32) as usize;
-    let right_filled = (right_amp.powf(0.5) * meter_width as f32) as usize;
-    let total_filled = (total_amp.powf(0.5) * meter_width as f32) as usize;
+    let left_filled = (left_amp.powf(0.35) * meter_width as f32) as usize;
+    let right_filled = (right_amp.powf(0.35) * meter_width as f32) as usize;
+    let total_filled = (total_amp.powf(0.35) * meter_width as f32) as usize;
 
     // Create meter characters
     let create_meter = |filled: usize, total: usize| -> String {

@@ -28,7 +28,7 @@ pub enum OutputError {
 
 
 /// Number of visualization bars to display
-pub const VIS_BARS: usize = 32;
+pub const VIS_BARS: usize = 64;
 
 
 /// Shared sample buffer between producer (decoder) and consumer (audio callback).
