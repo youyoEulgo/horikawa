@@ -4,14 +4,14 @@
 //! the current view. When a popup is active, it steals all keyboard
 //! input until confirmed or cancelled.
 
+use crossterm::event::KeyCode;
 use ratatui::{
     layout::Rect,
     style::{Color, Style},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
-use crossterm::event::KeyCode;
-
 
 /// Popup mode determines the popup's appearance and behavior.
 pub enum PopupMode {
@@ -33,7 +33,6 @@ pub enum PopupMode {
     },
 }
 
-
 /// Action to execute when the popup is confirmed.
 ///
 /// New variants can be added as needed without changing the popup machinery.
@@ -41,17 +40,17 @@ pub enum PendingAction {
     /// Scan a directory and save its audio files as an M3U playlist.
     /// The entered text becomes the playlist name.
     SaveM3uFromBrowser(std::path::PathBuf),
+    /// Save the current playlist tracks as an M3U file.
+    SaveM3uFromPlaylist,
     /// Delete a playlist entry from the playlists view.
     DeletePlaylist(super::PlaylistEntry),
 }
-
 
 /// Complete popup state.
 pub struct PopupState {
     pub mode: PopupMode,
     pub action: PendingAction,
 }
-
 
 /// Result returned from `handle_popup_key` after processing a keystroke.
 pub enum PopupResult {
@@ -63,7 +62,6 @@ pub enum PopupResult {
     /// User cancelled the popup.
     Cancelled,
 }
-
 
 impl PopupState {
     /// Creates a new text-input popup.
@@ -84,21 +82,32 @@ impl PopupState {
     }
 }
 
-
-/// Returns a Rect centered in `parent` with the given percent width/height.
-pub fn centered_rect(percent_x: u16, percent_y: u16, parent: Rect) -> Rect {
-    let popup_width = (parent.width as f32 * percent_x as f32 / 100.0) as u16;
-    let popup_height = (parent.height as f32 * percent_y as f32 / 100.0) as u16;
+/// Returns a Rect centered in `parent`, percentage width, absolute height.
+pub fn centered_rect(width_pct: u16, height: u16, parent: Rect) -> Rect {
+    let popup_width = ((parent.width as f32) * (width_pct as f32) / 100.0) as u16;
+    let popup_height = height.min(parent.height);
     let x = parent.x + (parent.width.saturating_sub(popup_width)) / 2;
     let y = parent.y + (parent.height.saturating_sub(popup_height)) / 2;
-    Rect::new(x, y, popup_width.min(parent.width), popup_height.min(parent.height))
+    Rect::new(x, y, popup_width.min(parent.width), popup_height)
 }
-
 
 /// Renders the popup overlay on top of the current view.
 pub fn draw_popup(frame: &mut Frame, popup: &PopupState, area: Rect) {
-    // Erase everything underneath the popup
-    frame.render_widget(Clear, area);
+    let reset = Style::reset();
+
+    // Clear one extra cell on each side to kill CJK double-width
+    // character leftovers from the underlying view.
+    let pad_x = area.x.saturating_sub(1);
+    let pad_y = area.y.saturating_sub(1);
+    let pad_w = (area.width + 2).min(frame.area().width.saturating_sub(pad_x));
+    let pad_h = (area.height + 2).min(frame.area().height.saturating_sub(pad_y));
+    let blank_line = " ".repeat(pad_w as usize);
+    for y in pad_y..pad_y + pad_h {
+        frame.render_widget(
+            Paragraph::new(Line::styled(&blank_line, reset)),
+            Rect::new(pad_x, y, pad_w, 1),
+        );
+    }
 
     match &popup.mode {
         PopupMode::Input { title, buffer, cursor } => {
@@ -107,43 +116,43 @@ pub fn draw_popup(frame: &mut Frame, popup: &PopupState, area: Rect) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan));
             let inner = block.inner(area);
+
+            for y in inner.y..inner.y + inner.height {
+                let fill = " ".repeat(inner.width as usize);
+                frame.render_widget(
+                    Paragraph::new(Line::styled(fill, reset)),
+                    Rect::new(inner.x, y, inner.width, 1),
+                );
+            }
+
             frame.render_widget(block, area);
 
-            // Split inner area: gap, input line, hint line
             let chunks = ratatui::layout::Layout::default()
                 .direction(ratatui::layout::Direction::Vertical)
                 .constraints([
-                    ratatui::layout::Constraint::Min(1),   // top gap
-                    ratatui::layout::Constraint::Length(1),// input line
-                    ratatui::layout::Constraint::Length(1),// hint line
+                    ratatui::layout::Constraint::Length(2),
+                    ratatui::layout::Constraint::Length(1),
                 ])
                 .split(inner);
 
-            // Render the text with cursor indicator
-            let display = if buffer.is_empty() {
-                " ".to_string()
+            if buffer.is_empty() {
+                let ph = Span::styled("Name your playlist...", Style::default().fg(Color::DarkGray));
+                let c = Span::styled("▍", Style::default().fg(Color::Yellow));
+                frame.render_widget(Paragraph::new(Line::from(vec![c, ph])), chunks[0]);
             } else {
                 let mut s = buffer.clone();
-                // Insert cursor marker
                 if *cursor < s.chars().count() {
-                    let byte_pos = s.char_indices()
-                        .nth(*cursor)
-                        .map(|(i, _)| i)
-                        .unwrap_or(s.len());
-                    s.insert(byte_pos, '▍');
+                    let bp = s.char_indices().nth(*cursor).map(|(i, _)| i).unwrap_or(s.len());
+                    s.insert(bp, '▍');
                 } else {
                     s.push('▍');
                 }
-                s
-            };
-
-            let input_para = Paragraph::new(display)
-                .style(Style::default().fg(Color::Yellow));
-            frame.render_widget(input_para, chunks[1]);
+                frame.render_widget(Paragraph::new(s).style(Style::default().fg(Color::Yellow)), chunks[0]);
+            }
 
             let hint = Paragraph::new("[Enter] Confirm  [Esc] Cancel")
                 .style(Style::default().fg(Color::DarkGray));
-            frame.render_widget(hint, chunks[2]);
+            frame.render_widget(hint, chunks[1]);
         }
 
         PopupMode::Confirm { title, message } => {
@@ -152,29 +161,36 @@ pub fn draw_popup(frame: &mut Frame, popup: &PopupState, area: Rect) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Yellow));
             let inner = block.inner(area);
+
+            for y in inner.y..inner.y + inner.height {
+                let fill = " ".repeat(inner.width as usize);
+                frame.render_widget(
+                    Paragraph::new(Line::styled(fill, reset)),
+                    Rect::new(inner.x, y, inner.width, 1),
+                );
+            }
+
             frame.render_widget(block, area);
 
             let chunks = ratatui::layout::Layout::default()
                 .direction(ratatui::layout::Direction::Vertical)
                 .constraints([
-                    ratatui::layout::Constraint::Min(1),   // top gap
-                    ratatui::layout::Constraint::Length(1),// message line
-                    ratatui::layout::Constraint::Length(1),// hint line
+                    ratatui::layout::Constraint::Length(2),
+                    ratatui::layout::Constraint::Length(1),
                 ])
                 .split(inner);
 
             let msg = Paragraph::new(message.as_str())
                 .style(Style::default().fg(Color::White))
                 .wrap(Wrap { trim: false });
-            frame.render_widget(msg, chunks[1]);
+            frame.render_widget(msg, chunks[0]);
 
             let hint = Paragraph::new("[Enter/y] Yes  [Esc/n] No")
                 .style(Style::default().fg(Color::DarkGray));
-            frame.render_widget(hint, chunks[2]);
+            frame.render_widget(hint, chunks[1]);
         }
     }
 }
-
 
 /// Handles a key event when the popup is active.
 ///
@@ -194,7 +210,6 @@ pub fn handle_popup_key(popup: &mut PopupState, code: KeyCode) -> PopupResult {
                 KeyCode::Esc => PopupResult::Cancelled,
                 KeyCode::Backspace => {
                     if *cursor > 0 {
-                        // Find the char before cursor and remove it
                         let char_idx = buffer
                             .char_indices()
                             .nth(*cursor - 1)
@@ -250,16 +265,12 @@ pub fn handle_popup_key(popup: &mut PopupState, code: KeyCode) -> PopupResult {
             }
         }
 
-        PopupMode::Confirm { .. } => {
-            match code {
-                KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
-                    PopupResult::Confirmed(None)
-                }
-                KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
-                    PopupResult::Cancelled
-                }
-                _ => PopupResult::StillActive,
+        PopupMode::Confirm { .. } => match code {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
+                PopupResult::Confirmed(None)
             }
-        }
+            KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => PopupResult::Cancelled,
+            _ => PopupResult::StillActive,
+        },
     }
 }

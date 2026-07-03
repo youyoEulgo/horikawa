@@ -312,8 +312,104 @@ mod platform {
     }
 }
 
-// Stub module for other platforms (Linux, etc.)
-#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+// Linux MPRIS D-Bus implementation
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "windows"))))]
+mod platform {
+    use souvlaki::{
+        MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, PlatformConfig,
+    };
+    use std::sync::mpsc::Sender;
+
+    /// Events from media controls that the app should handle.
+    #[derive(Debug, Clone)]
+    pub enum MediaControlCommand {
+        Play,
+        Pause,
+        Toggle,
+        Stop,
+        Next,
+        Previous,
+    }
+
+    /// Wrapper around souvlaki MediaControls for Linux MPRIS.
+    pub struct MediaControlsHandler {
+        controls: MediaControls,
+    }
+
+    impl MediaControlsHandler {
+        /// Creates a new media controls handler via MPRIS D-Bus.
+        ///
+        /// Returns None if D-Bus or MPRIS is not available.
+        pub fn new(event_sender: Sender<MediaControlCommand>) -> Option<Self> {
+            let config = PlatformConfig {
+                dbus_name: "oxidio",
+                display_name: "Oxidio Music Player",
+                hwnd: None,
+            };
+
+            let mut controls = match MediaControls::new(config) {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::warn!("Failed to create MPRIS media controls: {:?}", e);
+                    return None;
+                }
+            };
+
+            // Attach event handler for MPRIS media keys
+            if let Err(e) = controls.attach(move |event: MediaControlEvent| {
+                let cmd = match event {
+                    MediaControlEvent::Play => Some(MediaControlCommand::Play),
+                    MediaControlEvent::Pause => Some(MediaControlCommand::Pause),
+                    MediaControlEvent::Toggle => Some(MediaControlCommand::Toggle),
+                    MediaControlEvent::Stop => Some(MediaControlCommand::Stop),
+                    MediaControlEvent::Next => Some(MediaControlCommand::Next),
+                    MediaControlEvent::Previous => Some(MediaControlCommand::Previous),
+                    _ => None,
+                };
+                if let Some(cmd) = cmd {
+                    let _ = event_sender.send(cmd);
+                }
+            }) {
+                tracing::warn!("Failed to attach MPRIS media control handler: {:?}", e);
+                return None;
+            }
+
+            tracing::info!("Linux MPRIS media controls initialized");
+            Some(Self { controls })
+        }
+
+        /// Updates the playback state shown in MPRIS.
+        pub fn set_playback(&mut self, playback: MediaPlayback) {
+            if let Err(e) = self.controls.set_playback(playback) {
+                tracing::debug!("Failed to set MPRIS playback state: {:?}", e);
+            }
+        }
+
+        /// Updates the metadata (title, artist, album) in MPRIS.
+        /// Returns an error message if the operation failed.
+        pub fn set_metadata(&mut self, metadata: MediaMetadata) -> Option<String> {
+            tracing::debug!(
+                "Setting MPRIS metadata: title={:?}, artist={:?}, album={:?}",
+                metadata.title,
+                metadata.artist,
+                metadata.album
+            );
+            if let Err(e) = self.controls.set_metadata(metadata) {
+                let err_msg = format!("MPRIS metadata error: {:?}", e);
+                tracing::warn!("{}", err_msg);
+                return Some(err_msg);
+            }
+            None
+        }
+    }
+}
+
+// Stub module for other platforms (BSD, etc.)
+#[cfg(not(any(
+    target_os = "windows",
+    target_os = "macos",
+    all(unix, not(any(target_os = "macos", target_os = "windows")))
+)))]
 mod platform {
     use std::sync::mpsc::Sender;
 

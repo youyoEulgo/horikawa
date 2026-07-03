@@ -2,9 +2,8 @@
 //!
 //! Defines the different views available in the application.
 
-
 /// Visualization style for the visualizer view.
-#[derive( Debug, Clone, Copy, PartialEq, Eq, Default )]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VisualizerStyle {
     /// Vertical bars (default)
     #[default]
@@ -20,10 +19,9 @@ pub enum VisualizerStyle {
     LevelMeter,
 }
 
-
 impl VisualizerStyle {
     /// Returns the next visualization style.
-    pub fn next( self ) -> Self {
+    pub fn next(self) -> Self {
         match self {
             VisualizerStyle::Bars => VisualizerStyle::Spectrum,
             VisualizerStyle::Spectrum => VisualizerStyle::Waveform,
@@ -32,9 +30,8 @@ impl VisualizerStyle {
         }
     }
 
-
     /// Returns the name of the visualization style.
-    pub fn name( &self ) -> &'static str {
+    pub fn name(&self) -> &'static str {
         match self {
             VisualizerStyle::Bars => "Bars",
             VisualizerStyle::Spectrum => "Spectrum",
@@ -44,9 +41,8 @@ impl VisualizerStyle {
     }
 }
 
-
 /// Current view mode of the application.
-#[derive( Debug, Clone, Copy, PartialEq, Eq, Default )]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewMode {
     /// Playlist view - main view showing current playlist.
     #[default]
@@ -71,10 +67,9 @@ pub enum ViewMode {
     Settings,
 }
 
-
 impl ViewMode {
     /// Returns the next view in tab order (excluding Help overlay).
-    pub fn next_tab( self ) -> Self {
+    pub fn next_tab(self) -> Self {
         match self {
             ViewMode::Playlist => ViewMode::Browser,
             ViewMode::Browser => ViewMode::Playlists,
@@ -86,9 +81,8 @@ impl ViewMode {
         }
     }
 
-
     /// Returns the previous view in tab order (excluding Help overlay).
-    pub fn prev_tab( self ) -> Self {
+    pub fn prev_tab(self) -> Self {
         match self {
             ViewMode::Playlist => ViewMode::Settings,
             ViewMode::Browser => ViewMode::Playlist,
