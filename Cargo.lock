@@ -1336,7 +1336,9 @@ version = "1.1.0-RC.2"
 dependencies = [
  "cpal",
  "dirs",
+ "realfft",
  "rubato",
+ "rustfft",
  "serde",
  "serde_json",
  "symphonia",

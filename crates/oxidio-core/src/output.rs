@@ -9,6 +9,8 @@ use std::collections::VecDeque;
 use cpal::traits::{ DeviceTrait, HostTrait, StreamTrait };
 use thiserror::Error;
 
+use rustfft::{ FftPlanner, num_complex::Complex, FftDirection };
+
 
 /// Errors that can occur with audio output.
 #[derive( Debug, Error )]
@@ -30,6 +32,24 @@ pub enum OutputError {
 /// Number of visualization bars to display
 pub const VIS_BARS: usize = 64;
 
+/// FFT size for spectrum analysis (power of 2).
+const FFT_SIZE: usize = 1024;
+
+
+/// Precomputed Hann window coefficients (lazy static after first call).
+fn hann_window() -> &'static [f32; FFT_SIZE] {
+    use std::sync::OnceLock;
+    static WINDOW: OnceLock<[f32; FFT_SIZE]> = OnceLock::new();
+    WINDOW.get_or_init(|| {
+        let mut w = [0.0f32; FFT_SIZE];
+        let n = FFT_SIZE as f32 - 1.0;
+        for i in 0..FFT_SIZE {
+            w[i] = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / n).cos());
+        }
+        w
+    })
+}
+
 
 /// Shared sample buffer between producer (decoder) and consumer (audio callback).
 /// This is Send + Sync and can be shared across threads.
@@ -42,8 +62,14 @@ pub struct SampleBuffer {
     volume: AtomicU32,
     source_channels: u16,
     output_channels: u16,
-    /// Visualization data - RMS amplitudes for display
+    /// Visualization data — FFT-based log-spaced spectrum
     vis_data: Mutex<[f32; VIS_BARS]>,
+    /// Visualization data — RMS time-sliced (legacy volume-meter style)
+    vis_rms: Mutex<[f32; VIS_BARS]>,
+    /// FFT plan (lazy-init)
+    fft_plan: Mutex<Option<std::sync::Arc<dyn rustfft::Fft<f32>>>>,
+    /// FFT working buffer
+    fft_buf: Mutex<Vec<Complex<f32>>>,
 }
 
 
@@ -57,45 +83,137 @@ impl SampleBuffer {
         Self {
             buffer: Mutex::new( VecDeque::with_capacity( capacity ) ),
             vis_data: Mutex::new( [0.0; VIS_BARS] ),
+            vis_rms: Mutex::new( [0.0; VIS_BARS] ),
             capacity,
             paused: AtomicBool::new( false ),
             volume: AtomicU32::new( 1.0_f32.to_bits() ),
             source_channels,
             output_channels,
+            fft_plan: Mutex::new( None ),
+            fft_buf: Mutex::new( Vec::with_capacity( FFT_SIZE ) ),
         }
     }
 
 
     /// Pushes samples to the buffer. Returns number of samples actually pushed.
-    /// Also updates visualization data with RMS values.
+    /// Also updates visualization data via FFT spectrum analysis.
     pub fn push( &self, samples: &[f32] ) -> usize {
         let mut buf = self.buffer.lock().unwrap();
         let available = self.capacity.saturating_sub( buf.len() );
         let to_push = samples.len().min( available );
         buf.extend( samples[ ..to_push ].iter().copied() );
+        drop( buf );
 
-        // Update visualization data if we have enough samples
-        if to_push >= VIS_BARS {
-            let mut vis = self.vis_data.lock().unwrap();
-            let samples_per_bar = to_push / VIS_BARS;
-
-            for ( bar_idx, bar ) in vis.iter_mut().enumerate() {
-                let start = bar_idx * samples_per_bar;
-                let end = ( start + samples_per_bar ).min( to_push );
-
-                // Calculate RMS for this bar
-                let sum_sq: f32 = samples[ start..end ]
-                    .iter()
-                    .map( |s| s * s )
-                    .sum();
-                let rms = ( sum_sq / ( end - start ) as f32 ).sqrt();
-
-                // Smooth with previous value (decay)
-                *bar = ( *bar * 0.7 ) + ( rms * 0.3 );
+        // Accumulate samples for FFT and update RMS visualization
+        if !samples.is_empty() {
+            let mut fft_buf = self.fft_buf.lock().unwrap();
+            for &s in &samples[..to_push] {
+                fft_buf.push( Complex::new( s, 0.0 ) );
+                if fft_buf.len() >= FFT_SIZE {
+                    self.compute_fft( &mut *fft_buf );
+                    fft_buf.clear();
+                }
             }
+            drop( fft_buf );
+            self.compute_rms( &samples[..to_push] );
         }
 
         to_push
+    }
+
+
+    /// Computes FFT-based spectrum and bins results into VIS_BARS.
+    fn compute_fft( &self, buf: &mut Vec<Complex<f32>> ) {
+        // Ensure we have exactly FFT_SIZE points
+        if buf.len() < FFT_SIZE {
+            return;
+        }
+        buf.truncate( FFT_SIZE );
+
+        // Apply Hann window
+        let window = hann_window();
+        for ( i, sample ) in buf.iter_mut().enumerate() {
+            sample.im = 0.0;
+            sample.re *= window[ i ];
+        }
+
+        // Lazy-init FFT plan
+        let mut plan_guard = self.fft_plan.lock().unwrap();
+        if plan_guard.is_none() {
+            let mut planner = FftPlanner::<f32>::new();
+            let plan = planner.plan_fft( FFT_SIZE, FftDirection::Forward );
+            tracing::info!( "Initialized {} point FFT for visualizer", FFT_SIZE );
+            *plan_guard = Some( plan );
+        }
+        drop( plan_guard );
+
+        // Run FFT (in-place on buf)
+        if let Some( ref plan ) = *self.fft_plan.lock().unwrap() {
+            plan.process( &mut buf[..] );
+        }
+
+        // Compute magnitude spectrum (first N/2 bins — the rest is mirror)
+        let num_bins = FFT_SIZE / 2;
+
+        // Bin into VIS_BARS via log-spaced frequency mapping.
+        // Freq bin k maps to frequency k * sample_rate / FFT_SIZE.
+        // We map k → bar via log10(1 + k) scaled to [0, VIS_BARS).
+        let mut vis = self.vis_data.lock().unwrap();
+
+        // Temporary: accumulate magnitude per bar
+        let mut bar_sum = [0.0f32; VIS_BARS];
+        let mut bar_count = [0u32; VIS_BARS];
+
+        for k in 0..num_bins {
+            // Log-spaced bar index: log10(1 + 9*k/(num_bins-1)) → [0, 1)
+            let frac = k as f32 / (num_bins - 1).max( 1 ) as f32;
+            let log_frac = ( 1.0 + 9.0 * frac ).log10();
+            let bar = ( log_frac * VIS_BARS as f32 ) as usize;
+            let bar = bar.min( VIS_BARS - 1 );
+
+            let mag = ( buf[ k ].re * buf[ k ].re + buf[ k ].im * buf[ k ].im ).sqrt();
+            bar_sum[ bar ] += mag;
+            bar_count[ bar ] += 1;
+        }
+
+        for b in 0..VIS_BARS {
+            if bar_count[ b ] > 0 {
+                let avg = bar_sum[ b ] / bar_count[ b ] as f32;
+                // Scale — FFT gives raw magnitudes proportional to amplitude*N/2
+                let scaled = ( avg / ( FFT_SIZE as f32 * 0.15 ) ).min( 1.0 );
+                // Smooth with previous (decay)
+                vis[ b ] = vis[ b ] * 0.75 + scaled * 0.25;
+            } else {
+                vis[ b ] *= 0.90; // natural decay for empty bands
+            }
+        }
+    }
+
+
+    /// Updates legacy RMS volume-meter visualization from raw samples.
+    fn compute_rms( &self, samples: &[f32] ) {
+        if samples.len() < VIS_BARS { return; }
+        let mut rms = self.vis_rms.lock().unwrap();
+        let per_bar = samples.len() / VIS_BARS;
+        for ( b, bar ) in rms.iter_mut().enumerate() {
+            let start = b * per_bar;
+            let end = ( start + per_bar ).min( samples.len() );
+            let sum_sq: f32 = samples[ start..end ].iter().map( |s| s * s ).sum();
+            let val = ( sum_sq / ( end - start ) as f32 ).sqrt();
+            *bar = *bar * 0.7 + val * 0.3;
+        }
+    }
+
+
+    /// Gets the current FFT-based log-spaced spectrum data.
+    pub fn vis_data( &self ) -> [f32; VIS_BARS] {
+        *self.vis_data.lock().unwrap()
+    }
+
+
+    /// Gets the legacy RMS volume-meter style data.
+    pub fn vis_rms( &self ) -> [f32; VIS_BARS] {
+        *self.vis_rms.lock().unwrap()
     }
 
 
@@ -226,12 +344,6 @@ impl SampleBuffer {
     /// Gets paused state.
     pub fn is_paused( &self ) -> bool {
         self.paused.load( Ordering::Relaxed )
-    }
-
-
-    /// Gets the current visualization data (RMS amplitudes for each bar).
-    pub fn vis_data( &self ) -> [f32; VIS_BARS] {
-        *self.vis_data.lock().unwrap()
     }
 
 

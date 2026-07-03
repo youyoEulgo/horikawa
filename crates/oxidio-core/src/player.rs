@@ -496,6 +496,13 @@ impl Player {
     }
 
 
+    /// Gets legacy volume-meter style visualization data.
+    pub fn vis_rms( &self ) -> Option<[f32; crate::output::VIS_BARS]> {
+        let playback = self.playback.read().unwrap();
+        playback.as_ref().map( |h| h.sample_buffer.vis_rms() )
+    }
+
+
     /// Sets the volume level (0.0 = mute, 1.0 = normal, >1.0 = boost).
     pub fn set_volume( &self, volume: f32 ) {
         // Store volume for future tracks

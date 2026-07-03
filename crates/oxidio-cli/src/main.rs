@@ -87,6 +87,9 @@ struct App {
     // Visualizer style
     visualizer_style: VisualizerStyle,
 
+    // Visualizer data source: true = FFT spectrum, false = RMS volume
+    spectrum_mode: bool,
+
     // Volume (0.0 to 1.0)
     volume: f32,
 
@@ -194,6 +197,7 @@ impl App {
             command_ghost: None,
             edit_mode: false,
             visualizer_style: VisualizerStyle::default(),
+            spectrum_mode: true,
             volume,
             scroll_to_playing: false,
             last_click_time: None,
@@ -549,9 +553,9 @@ impl App {
 
   /      Cmd            Tab  Next View      Shift+Tab Previous View
   Space  Play/Pause     h/←  Previous       l/→  Next
-  Ctrl+h/l/←→ Seek      s    Style          +/-  Volume
-  m      Mute           v/Esc Close         H    Shortcuts
-  q      Quit
+  Ctrl+h/l/←→ Seek      s    Style          f    FFT/Volume
+  +/-    Volume         m    Mute           v/Esc Close
+  H      Shortcuts      q    Quit
   "#
                     }
                     ViewMode::Settings => {
@@ -1027,6 +1031,14 @@ impl App {
             KeyCode::Char('s') => {
                 self.visualizer_style = self.visualizer_style.next();
                 self.set_status(format!("Visualizer: {}", self.visualizer_style.name()));
+            }
+            KeyCode::Char('f') => {
+                self.spectrum_mode = !self.spectrum_mode;
+                self.set_status(if self.spectrum_mode {
+                    "Spectrum mode: FFT"
+                } else {
+                    "Spectrum mode: Volume"
+                });
             }
             // Playback controls
             KeyCode::Char(' ') => {
@@ -2598,7 +2610,11 @@ fn draw_now_playing(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_visualizer(frame: &mut Frame, app: &App, area: Rect) {
-    let vis_data = app.player.vis_data();
+    let vis_data = if app.spectrum_mode {
+        app.player.vis_data()
+    } else {
+        app.player.vis_rms()
+    };
 
     // Use the full height of the content area for visualization
     let inner_height = area.height.saturating_sub(2) as usize; // Account for borders
@@ -2635,7 +2651,7 @@ fn draw_visualizer(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let title = format!(
-        " Visualizer: {} (s to change, v/Esc to close) ",
+        " Visualizer: {} (s:style, f:FFT/Vol, v/Esc:close) ",
         app.visualizer_style.name()
     );
     let visualizer = Paragraph::new(lines)
@@ -3036,7 +3052,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [r]Rename [Space]Play [l/→]Next [h/←]Previous [+/-]Vol [p/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Help => " [jk]Scroll [PgUp/PgDn]Page [Esc/?]Close [q]Quit ",
                     ViewMode::TrackInfo => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [+/-]Vol [m]Mute [i/Esc]Close [H]Help [q]Quit ",
-                    ViewMode::Visualizer => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [s]Style [+/-]Vol [m]Mute [v/Esc]Close [H]Help [q]Quit ",
+                    ViewMode::Visualizer => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [s]Style [f]FFT/Vol [+/-]Vol [m]Mute [v/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Settings => " [jk]Nav [Enter]Toggle [Space]Play [l/→]Next [h/←]Previous [+/-]Vol [Esc]Close [H]Help [q]Quit ",
                 };
                 (hint.to_string(), Style::default().fg(Color::DarkGray))
