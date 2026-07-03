@@ -10,7 +10,7 @@ use std::time::Duration;
 
 use tokio::sync::broadcast;
 
-#[cfg( target_os = "windows" )]
+#[cfg( any( target_os = "windows", target_os = "macos" ) )]
 use souvlaki::{ MediaMetadata, MediaPlayback };
 
 use oxidio_core::player::PlaybackState;
@@ -23,7 +23,7 @@ use crate::media_controls::{ MediaControlCommand, MediaControlsHandler };
 
 
 /// Converts a file path to a file:// URL for SMTC album art.
-#[cfg( target_os = "windows" )]
+#[cfg( any( target_os = "windows", target_os = "macos" ) )]
 fn path_to_file_url( path: &std::path::Path ) -> Option<String> {
     let abs_path = path.canonicalize().ok()?;
     let path_str = abs_path.to_string_lossy();
@@ -36,7 +36,7 @@ fn path_to_file_url( path: &std::path::Path ) -> Option<String> {
 
 /// Finds album art in the same folder as the track.
 /// Returns a file:// URL if found.
-#[cfg( target_os = "windows" )]
+#[cfg( any( target_os = "windows", target_os = "macos" ) )]
 fn find_album_art( track_path: &std::path::Path ) -> Option<String> {
     let parent = track_path.parent()?;
 
@@ -84,7 +84,16 @@ fn find_album_art( track_path: &std::path::Path ) -> Option<String> {
     }
 
     let source_path = found_path?;
-    copy_to_temp_and_get_url( &source_path )
+
+    #[cfg( target_os = "windows" )]
+    {
+        copy_to_temp_and_get_url( &source_path )
+    }
+
+    #[cfg( target_os = "macos" )]
+    {
+        path_to_file_url( &source_path )
+    }
 }
 
 
@@ -155,7 +164,7 @@ fn copy_to_temp_and_get_url( source: &std::path::Path ) -> Option<String> {
 
 
 /// Updates SMTC metadata and playback state.
-#[cfg( target_os = "windows" )]
+#[cfg( any( target_os = "windows", target_os = "macos" ) )]
 fn update_smtc(
     player: &Player,
     controls: &mut MediaControlsHandler,
@@ -195,7 +204,11 @@ fn update_smtc(
             let artist = metadata.as_ref().and_then( |m| m.artist.clone() );
             let album = metadata.as_ref().and_then( |m| m.album.clone() );
 
-            let cover_url = find_album_art( track_path ).filter( |_| {
+            let cover_url = find_album_art( track_path );
+
+            // Windows: validate that the temp copy of the cover art exists
+            #[cfg( target_os = "windows" )]
+            let cover_url = cover_url.filter( |_| {
                 let temp_path = std::env::temp_dir().join( "oxidio" );
                 temp_path.read_dir()
                     .map( |mut entries| entries.any( |e| {
@@ -225,8 +238,8 @@ fn update_smtc(
 }
 
 
-/// Stub for non-Windows platforms.
-#[cfg( not( target_os = "windows" ) )]
+/// Stub for platforms without media controls (Linux, etc.).
+#[cfg( not( any( target_os = "windows", target_os = "macos" ) ) )]
 fn update_smtc(
     _player: &Player,
     _controls: &mut MediaControlsHandler,

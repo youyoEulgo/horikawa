@@ -1310,9 +1310,11 @@ version = "1.1.0-RC.2"
 dependencies = [
  "anyhow",
  "clap",
+ "core-foundation",
  "crossterm",
  "dirs",
  "discord-rich-presence",
+ "objc",
  "oxidio-core",
  "oxidio-ctl",
  "oxidio-protocol",

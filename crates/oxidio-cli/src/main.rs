@@ -1,4 +1,5 @@
 //! Oxidio CLI - Terminal UI music player
+#![allow(unexpected_cfgs)]
 
 mod browser;
 mod cli;
@@ -12,7 +13,7 @@ mod view;
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{ mpsc, Arc };
 use std::time::Duration;
 
 use anyhow::Result;
@@ -125,6 +126,16 @@ struct App {
 
     // Popup state (input or confirm dialog)
     popup_state: Option<popup::PopupState>,
+
+    // macOS media controls (must run on main thread)
+    #[cfg( target_os = "macos" )]
+    media_controls: Option<crate::media_controls::MediaControlsHandler>,
+    #[cfg( target_os = "macos" )]
+    smtc_rx: Option<mpsc::Receiver<crate::media_controls::MediaControlCommand>>,
+    #[cfg( target_os = "macos" )]
+    last_smtc_state: Option<PlaybackState>,
+    #[cfg( target_os = "macos" )]
+    last_smtc_track: Option<PathBuf>,
 }
 
 
@@ -195,6 +206,14 @@ impl App {
             playlist_list_selected: 0,
             last_loaded: None,
             popup_state: None,
+            #[cfg( target_os = "macos" )]
+            media_controls: None,
+            #[cfg( target_os = "macos" )]
+            smtc_rx: None,
+            #[cfg( target_os = "macos" )]
+            last_smtc_state: None,
+            #[cfg( target_os = "macos" )]
+            last_smtc_track: None,
         })
     }
 
@@ -258,10 +277,113 @@ impl App {
             }
             self.last_track = current_track;
         }
+
+        // macOS: update Now Playing media controls from the main thread
+        self.tick_media_controls();
     }
 
 
-    /// Handles a key event.
+    /// Updates macOS Now Playing controls (playback state + metadata)
+    /// and forwards media key events as AppCommands.
+    #[cfg( target_os = "macos" )]
+    fn tick_media_controls( &mut self ) {
+        use souvlaki::{ MediaMetadata, MediaPlayback };
+
+        // Handle SMTC enable/disable toggle
+        let smtc_enabled = self.settings.smtc_enabled;
+        if smtc_enabled && self.media_controls.is_none() {
+            let ( tx, rx ) = mpsc::channel();
+            self.media_controls = crate::media_controls::MediaControlsHandler::new( tx );
+            self.smtc_rx = Some( rx );
+            self.last_smtc_state = None;
+            self.last_smtc_track = None;
+        } else if !smtc_enabled && self.media_controls.is_some() {
+            self.media_controls = None;
+            self.smtc_rx = None;
+        }
+
+        // Drain media-key events from MPRemoteCommandCenter callbacks
+        if let Some( ref rx ) = self.smtc_rx {
+            while let Ok( cmd ) = rx.try_recv() {
+                let app_cmd = match cmd {
+                    // macOS Control Center sends Play when resuming from pause.
+                    // Map Play→Resume when paused so the track doesn't restart.
+                    crate::media_controls::MediaControlCommand::Play => {
+                        if self.player.state() == PlaybackState::Paused {
+                            AppCommand::Resume
+                        } else {
+                            AppCommand::Play
+                        }
+                    }
+                    crate::media_controls::MediaControlCommand::Pause => AppCommand::Pause,
+                    crate::media_controls::MediaControlCommand::Toggle => AppCommand::TogglePlayback,
+                    crate::media_controls::MediaControlCommand::Stop => AppCommand::Stop,
+                    crate::media_controls::MediaControlCommand::Next => AppCommand::Next,
+                    crate::media_controls::MediaControlCommand::Previous => AppCommand::Previous,
+                };
+                let _ = self.command_sender.try_send( app_cmd );
+            }
+        }
+
+        if let Some( ref mut controls ) = self.media_controls {
+            let state = self.player.state();
+            let current_track = self.player.current_track();
+
+            // Force update on first run or state change
+            let force = self.last_smtc_track.is_none();
+
+            // Update playback state if changed
+            if force || self.last_smtc_state != Some( state ) {
+                let playback = match state {
+                    PlaybackState::Playing => MediaPlayback::Playing { progress: None },
+                    PlaybackState::Paused => MediaPlayback::Paused { progress: None },
+                    PlaybackState::Stopped => MediaPlayback::Stopped,
+                };
+                controls.set_playback( playback );
+                self.last_smtc_state = Some( state );
+            }
+
+            // Update metadata if track changed or forced
+            if force || self.last_smtc_track != current_track {
+                if let Some( ref track_path ) = current_track {
+                    let metadata = self.player.metadata();
+
+                    let title = metadata.as_ref()
+                        .and_then( |m| m.title.clone() )
+                        .or_else( || {
+                            track_path.file_stem()
+                                .map( |n| n.to_string_lossy().to_string() )
+                        });
+
+                    let artist = metadata.as_ref().and_then( |m| m.artist.clone() );
+                    let album = metadata.as_ref().and_then( |m| m.album.clone() );
+
+                    controls.set_metadata( MediaMetadata {
+                        title: title.as_deref(),
+                        artist: artist.as_deref(),
+                        album: album.as_deref(),
+                        cover_url: None,
+                        duration: self.player.duration(),
+                    });
+                } else {
+                    // No track playing — clear Now Playing
+                    controls.set_metadata( MediaMetadata {
+                        title: None,
+                        artist: None,
+                        album: None,
+                        cover_url: None,
+                        duration: None,
+                    });
+                }
+                self.last_smtc_track = current_track;
+            }
+        }
+    }
+
+
+    /// Stub for non-macOS platforms.
+    #[cfg( not( target_os = "macos" ) )]
+    fn tick_media_controls( &mut self ) {}
     fn handle_key( &mut self, code: KeyCode, modifiers: KeyModifiers ) {
         // Popup steals all input when active
         if let Some( mut popup ) = self.popup_state.take() {
@@ -1525,6 +1647,7 @@ fn main() -> Result<()> {
     let proc_settings = ProcessorSettings::load();
     let settings_web_enabled = proc_settings.web_enabled;
     let integrations_discord = proc_settings.discord_enabled;
+    #[cfg( not( target_os = "macos" ) )]
     let integrations_smtc = proc_settings.smtc_enabled;
     let processor_player = Arc::clone( &player );
     let browse = args.browse;
@@ -1597,6 +1720,10 @@ fn main() -> Result<()> {
         let integrations_rx = channel.subscribe();
         let integrations_settings = ProcessorSettings {
             discord_enabled: integrations_discord,
+            // On macOS, SMTC is handled on the main thread (not in this worker)
+            #[cfg( target_os = "macos" )]
+            smtc_enabled: false,
+            #[cfg( not( target_os = "macos" ) )]
             smtc_enabled: integrations_smtc,
             web_enabled: settings_web_enabled,
             ..ProcessorSettings::default()
@@ -1638,6 +1765,16 @@ fn main() -> Result<()> {
     let state_rx = channel.subscribe();
     let mut app = App::new( player, command_sender, state_rx, &args )?;
 
+    // macOS: initialize Now Playing media controls on the main thread.
+    // This must happen here (not in a background thread) because
+    // MPNowPlayingInfoCenter and MPRemoteCommandCenter are main-thread-only.
+    #[cfg( target_os = "macos" )]
+    {
+        let ( smtc_tx, smtc_rx ) = mpsc::channel();
+        app.media_controls = crate::media_controls::MediaControlsHandler::new( smtc_tx );
+        app.smtc_rx = Some( smtc_rx );
+    }
+
     // Main loop
     loop {
         // Update state
@@ -1658,6 +1795,10 @@ fn main() -> Result<()> {
                 _ => {}
             }
         }
+
+        // macOS: pump CFRunLoop so MPNowPlayingInfoCenter XPC
+        // messages get delivered (1ms timeout, non-blocking).
+        crate::media_controls::pump_run_loop();
 
         if app.should_quit {
             // Save session before quitting
