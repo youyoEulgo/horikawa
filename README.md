@@ -6,17 +6,20 @@ A lightweight Terminal User Interface (TUI) music player written in Rust.
 
 ## Features
 
-- **Audio Playback** - Play, pause, stop, seek, volume control, next/previous track
-- **Multiple Formats** - MP3, FLAC, OGG, WAV, M4A/AAC, OPUS, WMA, AIFF, ALAC
-- **Visualizers** - Bars, spectrum analyzer, waveform, and level meter (~30 FPS)
-- **Playlist Management** - Shuffle, repeat modes (off/one/all), reordering, dedup, save/load (M3U)
-- **Directory Playlists** - Save directory references; auto-scan for audio files on load (`.oxidio`)
-- **File Browser** - Navigate local directories, add files/folders to playlist, quick-save as playlist
-- **Session Persistence** - Remembers playlist, position, volume, and settings
-- **Playlist Browser View** - Browse saved M3U and directory playlists in a dedicated TUI view
-- **Popup Dialogs** - Input and confirmation popups for naming playlists, confirming deletions, etc.
-- **Slash Commands** - `/playlist`, `/dirplaylist`, `/queue`, `/goto`, `/search`, `/seek`, etc.
+- **Audio Playback** — Play, pause, seek, volume control, next/previous track
+- **Multiple Formats** — MP3, FLAC, OGG, WAV, M4A/AAC, OPUS, WMA, AIFF, ALAC
+- **Visualizers** — Bars, spectrum, waveform, and level meter (~30 FPS)
+- **Playlist Management** — M3U and directory-based (.oxidio) playlists, shuffle, repeat, reorder, dedup
+- **File Browser** — Navigate local directories, add files/folders, quick-save as playlist
+- **Playlists View** — Dedicated TUI view to browse, load, delete, and rename saved playlists
+- **Popup Dialogs** — Input popups for naming playlists, confirmation popups for destructive actions
+- **Shortcut Help** — `H` key shows per-view keyboard shortcuts
+- **Vim-style Keybindings** — `h/j/k/l` for navigation and playback
+- **Session Persistence** — Remembers playlist, position, volume, settings, and last loaded playlist
+- **Slash Commands** — `/playlist`, `/dirplaylist`, `/queue`, `/goto`, `/seek`, `/reload`, etc.
 - **Platform Integration**
+  - macOS: Now Playing in Control Center, media keys
+  - Linux: MPRIS D-Bus (KDE/GNOME media controls)
   - Windows: System Media Transport Controls (lock screen, media keys)
   - Discord Rich Presence
 
@@ -64,23 +67,23 @@ oxidio /path/to/music/
 |-----|--------|
 | `Tab` / `Shift+Tab` | Next / previous view |
 | `/` | Enter slash command mode |
+| `H` | Show per-view shortcut help popup |
 | `q` | Quit |
-| `Esc` | Return to Playlist view |
 
-### Playback (all views)
+### Playback (available in most views)
 
 | Key | Action |
 |-----|--------|
 | `Space` | Play / Pause |
-| `n` / `→` | Next track |
-| `p` / `←` | Previous track |
-| `Ctrl+→` | Seek forward 10s |
-| `Ctrl+←` | Seek backward 10s |
+| `h` / `←` | Previous track |
+| `l` / `→` | Next track |
+| `Ctrl+h` / `Ctrl+l` | Seek backward / forward 10s |
+| `Ctrl+←` / `Ctrl+→` | Seek backward / forward 10s (non-macOS) |
 | `+` / `=` | Volume up |
 | `-` / `_` | Volume down |
 | `m` | Mute / unmute |
 
-### Playlist view
+### Playlist View
 
 | Key | Action |
 |-----|--------|
@@ -89,44 +92,73 @@ oxidio /path/to/music/
 | `g` / `Home` | Go to first track |
 | `G` / `End` | Go to last track |
 | `Enter` | Play selected track |
-| `s` | Stop |
+| `s` | Save current playlist as M3U (name prompt) |
+| `S` | Toggle shuffle |
 | `r` | Cycle repeat mode (Off → One → All) |
 | `R` | Reload last loaded playlist |
-| `S` | Toggle shuffle |
-| `c` | Clear playlist |
 | `e` | Toggle edit mode |
-| `d` | Delete track (edit mode) |
-| `Shift+J` | Move track down (edit mode) |
-| `Shift+K` | Move track up (edit mode) |
-| `v` | Cycle visualizer style |
-| `i` | Show track info |
+| `d` | Delete track (edit mode only) |
+| `c` | Clear playlist (edit mode only) |
+| `Shift+J` / `Shift+K` | Move track down / up (edit mode only) |
+| `v` | Open Visualizer |
+| `p` | Open Playlists view |
+| `b` | Open Browser view |
+| `i` | Open Track Info view |
+| `H` | Show Playlist shortcuts popup |
 
-### Browser view
+### Browser View
 
 | Key | Action |
 |-----|--------|
 | `↑` / `k` | Move selection up |
 | `↓` / `j` | Move selection down |
-| `Enter` | Enter directory / add file to playlist |
-| `h` / `Backspace` | Go to parent directory |
+| `l` / `Enter` / `→` | Enter directory / add file to playlist |
+| `h` / `Backspace` / `←` | Go to parent directory |
 | `a` | Add selected file or folder to playlist |
-| `S` | Save selected directory as directory playlist |
-| `M` | Save selected directory as M3U playlist (name prompt) |
+| `s` | Save selected directory as M3U (name prompt) |
+| `S` | Save selected directory as .oxidio (name prompt) |
 | `R` | Refresh directory listing |
 | `~` | Go to home directory |
 | `g` / `Home` | Go to first entry |
 | `G` / `End` | Go to last entry |
+| `b` / `Esc` | Return to Playlist view |
+| `H` | Show Browser shortcuts popup |
 
-### Playlists view
+### Playlists View
 
 | Key | Action |
 |-----|--------|
 | `↑` / `k` | Move selection up |
 | `↓` / `j` | Move selection down |
 | `Enter` | Load selected playlist |
-| `d` | Delete selected playlist |
+| `d` | Delete selected playlist (confirmation popup) |
+| `r` | Rename selected playlist (input popup) |
+| `p` / `Esc` | Return to Playlist view |
+| `H` | Show Playlists shortcuts popup |
 
-### Help view
+### Track Info View
+
+| Key | Action |
+|-----|--------|
+| `i` / `Esc` | Return to Playlist view |
+
+### Visualizer View
+
+| Key | Action |
+|-----|--------|
+| `s` | Cycle visualizer style (Bars → Spectrum → Waveform → Level Meter) |
+| `v` / `Esc` | Return to Playlist view |
+
+### Settings View
+
+| Key | Action |
+|-----|--------|
+| `↑` / `k` | Move selection up |
+| `↓` / `j` | Move selection down |
+| `Enter` | Toggle setting |
+| `Esc` | Return to Playlist view |
+
+### Help View
 
 | Key | Action |
 |-----|--------|
@@ -135,27 +167,15 @@ oxidio /path/to/music/
 | `PgUp` / `PgDn` | Page up / down |
 | `?` / `Esc` | Close help |
 
-### Track Info view
+## Views
 
-| Key | Action |
-|-----|--------|
-| `i` / `Esc` | Close track info |
+Press **Tab** / **Shift+Tab** to cycle through views:
 
-### Visualizer view
+```
+Playlist → Browser → Playlists → Track Info → Visualizer → Settings
+```
 
-| Key | Action |
-|-----|--------|
-| `v` | Cycle visualizer style (Bars → Spectrum → Waveform → Level Meter) |
-| `Esc` | Close visualizer |
-
-### Settings view
-
-| Key | Action |
-|-----|--------|
-| `↑` / `k` | Move selection up |
-| `↓` / `j` | Move selection down |
-| `Enter` | Toggle setting |
-| `Esc` | Close settings |
+Quick-access keys from Playlist view: `b` Browser, `p` Playlists, `i` Track Info, `v` Visualizer.
 
 ## Slash Commands
 
@@ -184,11 +204,11 @@ Type `/` to enter command mode, then use any of these:
 | Command | Alias | Action |
 |---------|-------|--------|
 | `/dirplaylist save <name> [dir]` | `/dirpl save` | Save directory as playlist (`.oxidio`) |
-| `/dirplaylist load <name>` | `/dirpl load` | Load & scan directory playlist |
+| `/dirplaylist load <name>` | `/dirpl load` | Load and scan directory playlist |
 | `/dirplaylist list` | `/dirpl ls` | List saved directory playlists |
 | `/dirplaylist delete <name>` | `/dirpl del` | Delete directory playlist |
 
-### Navigation & Playback
+### Navigation and Playback
 
 | Command | Action |
 |---------|--------|
@@ -204,14 +224,6 @@ Type `/` to enter command mode, then use any of these:
 | `/help` | Show help |
 | `/quit` | Quit application |
 
-## Views
-
-Press **Tab** / **Shift+Tab** to cycle through views:
-
-```
-Playlist → Browser → Playlists → Track Info → Visualizer → Settings
-```
-
 ## Configuration
 
 Settings are stored at:
@@ -219,7 +231,7 @@ Settings are stored at:
 - Windows: `%APPDATA%\oxidio\settings.json`
 
 Playlists are stored at:
-- Linux/macOS: `~/.local/share/oxidio/playlists/`
+- Linux: `~/.local/share/oxidio/playlists/`
 - macOS: `~/Library/Application Support/oxidio/playlists/`
 - Windows: `Music/Oxidio/`
 

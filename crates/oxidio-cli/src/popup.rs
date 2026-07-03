@@ -37,19 +37,28 @@ pub enum PopupMode {
 ///
 /// New variants can be added as needed without changing the popup machinery.
 pub enum PendingAction {
+    /// No action — popup is informational only.
+    None,
     /// Scan a directory and save its audio files as an M3U playlist.
-    /// The entered text becomes the playlist name.
     SaveM3uFromBrowser(std::path::PathBuf),
+    /// Save a directory reference as a .oxidio directory playlist.
+    SaveDirPlFromBrowser(std::path::PathBuf),
     /// Save the current playlist tracks as an M3U file.
     SaveM3uFromPlaylist,
     /// Delete a playlist entry from the playlists view.
     DeletePlaylist(super::PlaylistEntry),
+    /// Rename a playlist entry.
+    RenamePlaylist(super::PlaylistEntry),
 }
 
 /// Complete popup state.
 pub struct PopupState {
     pub mode: PopupMode,
     pub action: PendingAction,
+    /// Preferred height in terminal rows (0 = use default).
+    pub preferred_height: u16,
+    /// If true, the popup is informational (Enter/Esc both close).
+    pub is_info: bool,
 }
 
 /// Result returned from `handle_popup_key` after processing a keystroke.
@@ -67,18 +76,17 @@ impl PopupState {
     /// Creates a new text-input popup.
     pub fn new_input(title: String, default_text: String, action: PendingAction) -> Self {
         let cursor = default_text.chars().count();
-        Self {
-            mode: PopupMode::Input { title, buffer: default_text, cursor },
-            action,
-        }
+        Self { mode: PopupMode::Input { title, buffer: default_text, cursor }, action, preferred_height: 0, is_info: false }
     }
 
     /// Creates a new confirmation popup.
     pub fn new_confirm(title: String, message: String, action: PendingAction) -> Self {
-        Self {
-            mode: PopupMode::Confirm { title, message },
-            action,
-        }
+        Self { mode: PopupMode::Confirm { title, message }, action, preferred_height: 0, is_info: false }
+    }
+
+    /// Creates a confirmation popup with a custom height.
+    pub fn new_confirm_tall(title: String, message: String, action: PendingAction, height: u16) -> Self {
+        Self { mode: PopupMode::Confirm { title, message }, action, preferred_height: height, is_info: true }
     }
 }
 
@@ -95,14 +103,14 @@ pub fn centered_rect(width_pct: u16, height: u16, parent: Rect) -> Rect {
 pub fn draw_popup(frame: &mut Frame, popup: &PopupState, area: Rect) {
     let reset = Style::reset();
 
-    // Clear one extra cell on each side to kill CJK double-width
-    // character leftovers from the underlying view.
+    // Clear the popup area plus one extra column on each side to kill
+    // CJK double-width character leftovers from the underlying view.
+    // CJK chars only leak horizontally, not vertically, so we don't
+    // need extra padding on the Y axis.
     let pad_x = area.x.saturating_sub(1);
-    let pad_y = area.y.saturating_sub(1);
     let pad_w = (area.width + 2).min(frame.area().width.saturating_sub(pad_x));
-    let pad_h = (area.height + 2).min(frame.area().height.saturating_sub(pad_y));
     let blank_line = " ".repeat(pad_w as usize);
-    for y in pad_y..pad_y + pad_h {
+    for y in area.y..area.y + area.height {
         frame.render_widget(
             Paragraph::new(Line::styled(&blank_line, reset)),
             Rect::new(pad_x, y, pad_w, 1),
@@ -175,7 +183,7 @@ pub fn draw_popup(frame: &mut Frame, popup: &PopupState, area: Rect) {
             let chunks = ratatui::layout::Layout::default()
                 .direction(ratatui::layout::Direction::Vertical)
                 .constraints([
-                    ratatui::layout::Constraint::Length(2),
+                    ratatui::layout::Constraint::Min(2),
                     ratatui::layout::Constraint::Length(1),
                 ])
                 .split(inner);
@@ -185,7 +193,12 @@ pub fn draw_popup(frame: &mut Frame, popup: &PopupState, area: Rect) {
                 .wrap(Wrap { trim: false });
             frame.render_widget(msg, chunks[0]);
 
-            let hint = Paragraph::new("[Enter/y] Yes  [Esc/n] No")
+            let hint_text = if popup.is_info {
+                "[Enter/H/Esc] Close"
+            } else {
+                "[Enter/y] Yes  [Esc/n] No"
+            };
+            let hint = Paragraph::new(hint_text)
                 .style(Style::default().fg(Color::DarkGray));
             frame.render_widget(hint, chunks[1]);
         }

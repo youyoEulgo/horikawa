@@ -386,6 +386,10 @@ impl App {
     fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         // Popup steals all input when active
         if let Some(mut popup) = self.popup_state.take() {
+            // H closes informational popups
+            if popup.is_info && code == KeyCode::Char('H') {
+                return;
+            }
             match popup::handle_popup_key(&mut popup, code) {
                 popup::PopupResult::StillActive => {
                     self.popup_state = Some(popup);
@@ -493,6 +497,90 @@ impl App {
                 self.view_mode = ViewMode::Help;
                 return;
             }
+            KeyCode::Char('H') => {
+                let shortcuts = match self.view_mode {
+                    ViewMode::Playlist => {
+                        r#"Playlist Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  Space  Play/Pause     h/←  Previous       l/→  Next
+  Ctrl+h/l/←→ Seek      s    Save M3U       S    Shuffle
+  r      Repeat         R    Reload         v    Visualizer
+  p      Playlists      b    Browser        i    Track Info
+  +/-    Volume         H    Shortcuts      q    Quit
+  
+  e      Edit Mode
+  Edit Mode:
+  Shift+J/K Move        d    Delete         c    Clear
+
+  "#
+                    }
+                    ViewMode::Browser => {
+                        r#"Browser Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  j/k    Navigate       l/Enter Open        h/Backspace Up
+  a      Add to Playlist                    ~    Home
+  S      Save as Dir Playlist               s    Save M3U
+  b/Esc  Close          H    Shortcuts      q    Quit
+  "#
+                    }
+                    ViewMode::Playlists => {
+                        r#"Playlists Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  j/k    Navigate       Enter Load          d    Delete
+  r      Rename         Space Play/Pause    h/←  Previous
+  l/→    Next           +/-  Volume         p/Esc Close
+  H      Shortcuts      q    Quit
+  "#
+                    }
+                    ViewMode::TrackInfo => {
+                        r#"Track Info Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  Space  Play/Pause     h/←  Previous       l/→  Next
+  Ctrl+h/l/←→ Seek      +/-  Volume         m    Mute
+  i/Esc  Close          H    Shortcuts      q    Quit
+  "#
+                    }
+                    ViewMode::Visualizer => {
+                        r#"Visualizer Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  Space  Play/Pause     h/←  Previous       l/→  Next
+  Ctrl+h/l/←→ Seek      s    Style          +/-  Volume
+  m      Mute           v/Esc Close         H    Shortcuts
+  q      Quit
+  "#
+                    }
+                    ViewMode::Settings => {
+                        r#"Settings Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  j/k    Navigate       Enter Toggle
+  Space  Play/Pause     h/←  Previous       l/→  Next
+  +/-    Volume         m    Mute
+  Esc    Close          H    Shortcuts      q    Quit
+  "#
+                    }
+                    ViewMode::Help => {
+                        r#"Help Shortcuts
+
+  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  j/k    Scroll         PgUp/PgDn Page
+  Esc/?  Close          H    Shortcuts      q    Quit
+  "#
+                    }
+                };
+                let lines = shortcuts.lines().count() as u16 + 2; // +2 for borders
+                self.popup_state = Some(popup::PopupState::new_confirm_tall(
+                    format!("Shortcuts"),
+                    shortcuts.to_string(),
+                    popup::PendingAction::None,
+                    lines,
+                ));
+            }
             KeyCode::Esc => {
                 if self.view_mode == ViewMode::Help
                     || self.view_mode == ViewMode::TrackInfo
@@ -550,11 +638,14 @@ impl App {
             }
             KeyCode::Char('e') => {
                 self.edit_mode = !self.edit_mode;
-                self.set_status(if self.edit_mode {
-                    "Edit mode: J/K to move, d to delete"
+                if self.edit_mode {
+                    // Persistent — stays until edit mode is turned off
+                    self.status_message = Some("Edit mode: Shift+J/K to move, d to delete, c to clear".into());
+                    self.status_clear_at = None;
                 } else {
-                    "Edit mode off"
-                });
+                    self.status_message = None;
+                    self.set_status("Edit mode off");
+                }
             }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.playlist_select_previous();
@@ -575,13 +666,7 @@ impl App {
             KeyCode::Enter => {
                 self.play_selected();
             }
-            KeyCode::Char('n') => {
-                self.play_next();
-            }
-            KeyCode::Char('p') => {
-                self.play_previous();
-            }
-            KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
                 // Seek forward 10 seconds
                 let pos = self.player.position();
                 let new_pos = pos + Duration::from_secs(10);
@@ -593,8 +678,32 @@ impl App {
                     }
                 }
             }
-            KeyCode::Left if modifiers.contains(KeyModifiers::CONTROL) => {
+            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
                 // Seek backward 10 seconds
+                let pos = self.player.position();
+                let new_pos = pos.saturating_sub(Duration::from_secs(10));
+                self.send_command(AppCommand::Seek {
+                    position_secs: new_pos.as_secs_f64(),
+                });
+            }
+            KeyCode::Char('h') => {
+                self.play_previous();
+            }
+            KeyCode::Char('l') => {
+                self.play_next();
+            }
+            KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos + Duration::from_secs(10);
+                if let Some(duration) = self.player.duration() {
+                    if new_pos < duration {
+                        self.send_command(AppCommand::Seek {
+                            position_secs: new_pos.as_secs_f64(),
+                        });
+                    }
+                }
+            }
+            KeyCode::Left if modifiers.contains(KeyModifiers::CONTROL) => {
                 let pos = self.player.position();
                 let new_pos = pos.saturating_sub(Duration::from_secs(10));
                 self.send_command(AppCommand::Seek {
@@ -607,7 +716,7 @@ impl App {
             KeyCode::Left => {
                 self.play_previous();
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('c') if self.edit_mode => {
                 self.send_command(AppCommand::ClearPlaylist);
                 self.set_status("Playlist cleared");
             }
@@ -639,10 +748,15 @@ impl App {
                     if new_shuffle { "on" } else { "off" }
                 ));
             }
+            KeyCode::Char('b') => {
+                self.view_mode = ViewMode::Browser;
+            }
             KeyCode::Char('v') => {
-                // Cycle visualizer style
-                self.visualizer_style = self.visualizer_style.next();
-                self.set_status(format!("Visualizer: {}", self.visualizer_style.name()));
+                self.view_mode = ViewMode::Visualizer;
+            }
+            KeyCode::Char('p') => {
+                self.refresh_playlist_lists();
+                self.view_mode = ViewMode::Playlists;
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 // Volume up
@@ -690,22 +804,24 @@ impl App {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
+            KeyCode::Char('b') | KeyCode::Esc => {
+                self.view_mode = ViewMode::Playlist;
+            }
             KeyCode::Up | KeyCode::Char('k') => {
                 self.browser.select_previous();
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 self.browser.select_next();
             }
-            KeyCode::Enter | KeyCode::Char('l') => {
+            KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 if let Ok(Some(file_path)) = self.browser.enter_selected() {
-                    // Add file to playlist
                     self.send_command(AppCommand::AddPath {
                         path: file_path.to_string_lossy().to_string(),
                     });
                     self.set_status("Added to playlist");
                 }
             }
-            KeyCode::Backspace | KeyCode::Char('h') => {
+            KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
                 let _ = self.browser.go_up();
             }
             KeyCode::Char('a') => {
@@ -728,37 +844,57 @@ impl App {
                     }
                 }
             }
-            KeyCode::Char('S') => {
-                // Save selected directory as a directory playlist
+            KeyCode::Char('s') => {
+                // Save selected dir as M3U (popup to name)
                 if let Some(entry) = self.browser.selected_entry() {
-                    if entry.is_dir && entry.name != ".." {
-                        let dir_name = entry.name.clone();
-                        self.send_command(AppCommand::SaveDirPlaylist {
-                            name: dir_name.clone(),
-                            directory: entry.path.to_string_lossy().to_string(),
-                        });
-                        self.set_status(format!("Saved directory playlist: {}", dir_name));
+                    let (dir, default_name) = if entry.is_dir && entry.name != ".." {
+                        (entry.path.clone(), entry.name.clone())
                     } else if entry.name == ".." {
                         self.set_status("Cannot save parent directory");
+                        return;
                     } else {
-                        self.set_status("Only directories can be saved as playlist");
-                    }
+                        // File: use its parent directory
+                        (
+                            entry.path.parent().unwrap_or(&entry.path).to_path_buf(),
+                            entry
+                                .path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| entry.name.clone()),
+                        )
+                    };
+                    self.popup_state = Some(popup::PopupState::new_input(
+                        "Save M3U Playlist".to_string(),
+                        default_name,
+                        popup::PendingAction::SaveM3uFromBrowser(dir),
+                    ));
                 }
             }
-            KeyCode::Char('M') => {
-                // Save directory as M3U playlist (with name prompt)
+            KeyCode::Char('S') => {
+                // Save selected dir as .oxidio (popup to name)
                 if let Some(entry) = self.browser.selected_entry() {
-                    if entry.is_dir && entry.name != ".." {
-                        self.popup_state = Some(popup::PopupState::new_input(
-                            "Save M3U Playlist".to_string(),
-                            entry.name.clone(),
-                            popup::PendingAction::SaveM3uFromBrowser(entry.path.clone()),
-                        ));
+                    let (dir, default_name) = if entry.is_dir && entry.name != ".." {
+                        (entry.path.clone(), entry.name.clone())
                     } else if entry.name == ".." {
                         self.set_status("Cannot save parent directory");
+                        return;
                     } else {
-                        self.set_status("Only directories can be saved as M3U");
-                    }
+                        (
+                            entry.path.parent().unwrap_or(&entry.path).to_path_buf(),
+                            entry
+                                .path
+                                .parent()
+                                .and_then(|p| p.file_name())
+                                .map(|n| n.to_string_lossy().to_string())
+                                .unwrap_or_else(|| entry.name.clone()),
+                        )
+                    };
+                    self.popup_state = Some(popup::PopupState::new_input(
+                        "Save Dir Playlist".to_string(),
+                        default_name,
+                        popup::PendingAction::SaveDirPlFromBrowser(dir),
+                    ));
                 }
             }
             KeyCode::Char('R') => {
@@ -775,34 +911,6 @@ impl App {
                 if let Some(home) = dirs::home_dir() {
                     let _ = self.browser.navigate_to(&home);
                 }
-            }
-            // Playback controls
-            KeyCode::Char(' ') => {
-                self.send_command(AppCommand::TogglePlayback);
-            }
-            KeyCode::Char('n') => self.play_next(),
-            KeyCode::Char('p') => self.play_previous(),
-            KeyCode::Left => self.play_previous(),
-            KeyCode::Right => self.play_next(),
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.volume = (self.volume + 0.05).min(1.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('-') | KeyCode::Char('_') => {
-                self.volume = (self.volume - 0.05).max(0.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('m') => {
-                if self.volume > 0.0 {
-                    self.volume = 0.0;
-                    self.set_status("Muted");
-                } else {
-                    self.volume = 1.0;
-                    self.set_status("Volume: 100%");
-                }
-                self.send_command(AppCommand::SetVolume { level: self.volume });
             }
             _ => {}
         }
@@ -845,8 +953,24 @@ impl App {
             KeyCode::Char(' ') => {
                 self.send_command(AppCommand::TogglePlayback);
             }
-            KeyCode::Char('n') => self.play_next(),
-            KeyCode::Char('p') => self.play_previous(),
+            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos + Duration::from_secs(10);
+                if let Some(duration) = self.player.duration() {
+                    if new_pos < duration {
+                        self.send_command(AppCommand::Seek {
+                            position_secs: new_pos.as_secs_f64(),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos.saturating_sub(Duration::from_secs(10));
+                self.send_command(AppCommand::Seek {
+                    position_secs: new_pos.as_secs_f64(),
+                });
+            }
             KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
                 let pos = self.player.position();
                 let new_pos = pos + Duration::from_secs(10);
@@ -865,8 +989,8 @@ impl App {
                     position_secs: new_pos.as_secs_f64(),
                 });
             }
-            KeyCode::Right => self.play_next(),
-            KeyCode::Left => self.play_previous(),
+            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
+            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.volume = (self.volume + 0.05).min(1.0);
                 self.send_command(AppCommand::SetVolume { level: self.volume });
@@ -896,11 +1020,10 @@ impl App {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Char('v') => {
                 self.view_mode = ViewMode::Playlist;
             }
-            KeyCode::Char('v') => {
-                // Cycle visualizer style
+            KeyCode::Char('s') => {
                 self.visualizer_style = self.visualizer_style.next();
                 self.set_status(format!("Visualizer: {}", self.visualizer_style.name()));
             }
@@ -908,8 +1031,24 @@ impl App {
             KeyCode::Char(' ') => {
                 self.send_command(AppCommand::TogglePlayback);
             }
-            KeyCode::Char('n') => self.play_next(),
-            KeyCode::Char('p') => self.play_previous(),
+            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos + Duration::from_secs(10);
+                if let Some(duration) = self.player.duration() {
+                    if new_pos < duration {
+                        self.send_command(AppCommand::Seek {
+                            position_secs: new_pos.as_secs_f64(),
+                        });
+                    }
+                }
+            }
+            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos.saturating_sub(Duration::from_secs(10));
+                self.send_command(AppCommand::Seek {
+                    position_secs: new_pos.as_secs_f64(),
+                });
+            }
             KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
                 let pos = self.player.position();
                 let new_pos = pos + Duration::from_secs(10);
@@ -928,8 +1067,8 @@ impl App {
                     position_secs: new_pos.as_secs_f64(),
                 });
             }
-            KeyCode::Right => self.play_next(),
-            KeyCode::Left => self.play_previous(),
+            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
+            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.volume = (self.volume + 0.05).min(1.0);
                 self.send_command(AppCommand::SetVolume { level: self.volume });
@@ -1010,10 +1149,8 @@ impl App {
             KeyCode::Char(' ') => {
                 self.send_command(AppCommand::TogglePlayback);
             }
-            KeyCode::Char('n') => self.play_next(),
-            KeyCode::Char('p') => self.play_previous(),
-            KeyCode::Left => self.play_previous(),
-            KeyCode::Right => self.play_next(),
+            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
+            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.volume = (self.volume + 0.05).min(1.0);
                 self.send_command(AppCommand::SetVolume { level: self.volume });
@@ -1479,6 +1616,8 @@ impl App {
     /// Executes the action from a confirmed popup.
     fn execute_popup_action(&mut self, action: popup::PendingAction, name: Option<String>) {
         match action {
+            popup::PendingAction::None => {}
+
             popup::PendingAction::SaveM3uFromBrowser(dir) => {
                 let playlist_name = name.unwrap_or_else(|| "untitled".to_string());
 
@@ -1556,6 +1695,16 @@ impl App {
                 ));
             }
 
+            popup::PendingAction::SaveDirPlFromBrowser(dir) => {
+                let playlist_name = name.unwrap_or_else(|| "untitled".to_string());
+                self.send_command(AppCommand::SaveDirPlaylist {
+                    name: playlist_name.clone(),
+                    directory: dir.to_string_lossy().to_string(),
+                });
+                self.last_loaded = Some(PlaylistEntry::DirPl(playlist_name.clone()));
+                self.set_status(format!("Saved directory playlist: {}", playlist_name));
+            }
+
             popup::PendingAction::DeletePlaylist(entry) => {
                 match &entry {
                     PlaylistEntry::M3u(name) => {
@@ -1569,6 +1718,35 @@ impl App {
                 }
                 self.refresh_playlist_lists();
             }
+
+            popup::PendingAction::RenamePlaylist(entry) => {
+                let new_name = name.unwrap_or_default();
+                if new_name.is_empty() {
+                    self.set_status("Rename cancelled: empty name");
+                    return;
+                }
+                if let Some(dir) = oxidio_core::Playlist::playlist_dir() {
+                    let (old_ext, old_name) = match &entry {
+                        PlaylistEntry::M3u(n) => ("m3u", n.as_str()),
+                        PlaylistEntry::DirPl(n) => ("oxidio", n.as_str()),
+                    };
+                    let old_path = dir.join(format!("{}.{}", old_name, old_ext));
+                    let new_path = dir.join(format!("{}.{}", new_name, old_ext));
+                    if old_path.exists() && !new_path.exists() {
+                        match std::fs::rename(&old_path, &new_path) {
+                            Ok(()) => {
+                                self.set_status(format!("Renamed: {} → {}", old_name, new_name));
+                                self.refresh_playlist_lists();
+                            }
+                            Err(e) => {
+                                self.set_status(format!("Rename error: {}", e));
+                            }
+                        }
+                    } else if new_path.exists() {
+                        self.set_status(format!("'{}' already exists", new_name));
+                    }
+                }
+            }
         }
     }
 
@@ -1578,7 +1756,7 @@ impl App {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
-            KeyCode::Esc => {
+            KeyCode::Esc | KeyCode::Char('p') => {
                 self.view_mode = ViewMode::Playlist;
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1621,14 +1799,21 @@ impl App {
                     ));
                 }
             }
+            KeyCode::Char('r') => {
+                if let Some(entry) = self.playlist_entries.get(self.playlist_list_selected) {
+                    self.popup_state = Some(popup::PopupState::new_input(
+                        "Rename Playlist".to_string(),
+                        entry.name().to_string(),
+                        popup::PendingAction::RenamePlaylist(entry.clone()),
+                    ));
+                }
+            }
             // Playback controls
             KeyCode::Char(' ') => {
                 self.send_command(AppCommand::TogglePlayback);
             }
-            KeyCode::Char('n') => self.play_next(),
-            KeyCode::Char('p') => self.play_previous(),
-            KeyCode::Left => self.play_previous(),
-            KeyCode::Right => self.play_next(),
+            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
+            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 self.volume = (self.volume + 0.05).min(1.0);
                 self.send_command(AppCommand::SetVolume { level: self.volume });
@@ -1925,7 +2110,7 @@ fn draw_ui(frame: &mut Frame, app: &mut App) {
             Constraint::Length(2), // Header
             Constraint::Min(0),    // Main content
             Constraint::Length(5), // Now playing
-            Constraint::Length(1), // Status bar
+            Constraint::Length(2), // Status bar
         ])
         .split(area);
 
@@ -1970,7 +2155,12 @@ fn draw_ui(frame: &mut Frame, app: &mut App) {
 
     // Popup overlay (rendered last, on top of everything)
     if let Some(ref popup) = app.popup_state {
-        let popup_area = popup::centered_rect(50, 5, frame.area());
+        let height = if popup.preferred_height > 0 {
+            popup.preferred_height
+        } else {
+            5
+        };
+        let popup_area = popup::centered_rect(50, height, frame.area());
         popup::draw_popup(frame, popup, popup_area);
     }
 }
@@ -2444,7 +2634,7 @@ fn draw_visualizer(frame: &mut Frame, app: &App, area: Rect) {
     }
 
     let title = format!(
-        " Visualizer: {} (v to change, Esc to close) ",
+        " Visualizer: {} (s to change, v/Esc to close) ",
         app.visualizer_style.name()
     );
     let visualizer = Paragraph::new(lines)
@@ -2770,6 +2960,11 @@ fn draw_settings(frame: &mut Frame, app: &App, area: Rect) {
 }
 
 fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(1), Constraint::Length(1)])
+        .split(area);
+
     match app.input_mode {
         InputMode::Command => {
             let input_text = format!("/{}", app.input_buffer.content());
@@ -2780,31 +2975,32 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
                     Style::default().fg(Color::DarkGray),
                 ));
             }
-            let status = Paragraph::new(Line::from(spans));
-            frame.render_widget(status, area);
+            frame.render_widget(Paragraph::new(Line::from(spans)), chunks[0]);
         }
         InputMode::Search => {
             let text = format!("Search: {}", app.input_buffer.content());
-            let status = Paragraph::new(text).style(Style::default().fg(Color::Yellow));
-            frame.render_widget(status, area);
+            frame.render_widget(
+                Paragraph::new(text).style(Style::default().fg(Color::Yellow)),
+                chunks[0],
+            );
         }
         InputMode::Normal => {
             let (text, style) = if let Some(ref msg) = app.status_message {
                 (msg.clone(), Style::default().fg(Color::Green))
             } else {
                 let hint = match app.view_mode {
-                    ViewMode::Playlist => " [/]Cmd [Tab]View [Space]Play [n/p]Skip [s]Save [e]Edit [r]Repeat [R]Reload [c]Clear [i]Info [v]Vis [+/-]Vol [q]Quit ",
-                    ViewMode::Browser => " [/]Cmd [Tab]View [jk]Nav [Enter]Open [a]Add [S]SaveDir [M]SaveM3U [h]Up [Space]Play [n/p]Skip [~]Home [+/-]Vol [q]Quit ",
-                    ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [Space]Play [n/p]Skip [+/-]Vol [Tab]View [Esc]Close [q]Quit ",
+                    ViewMode::Playlist => " [Space]Play [h/←]Previous [l/→]Next [+/-]Vol [m]Mute [H]Help [q]Quit ",
+                    ViewMode::Browser => " [jk]Nav [l/Enter]Open [h/Backspace]Up [a]Add [s]SaveM3U [S]SaveDir [~]Home [b/Esc]Close [H]Help [q]Quit ",
+                    ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [r]Rename [Space]Play [l/→]Next [h/←]Previous [+/-]Vol [p/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Help => " [jk]Scroll [PgUp/PgDn]Page [Esc/?]Close [q]Quit ",
-                    ViewMode::TrackInfo => " [Space]Play [n/p←→]Skip [Ctrl←→]Seek [+/-]Vol [m]Mute [Tab]View [i/Esc]Close [q]Quit ",
-                    ViewMode::Visualizer => " [Space]Play [n/p←→]Skip [Ctrl←→]Seek [v]Style [+/-]Vol [m]Mute [Tab]View [Esc]Close [q]Quit ",
-                    ViewMode::Settings => " [jk]Nav [Enter]Toggle [Space]Play [n/p]Skip [+/-]Vol [m]Mute [Tab]View [Esc]Close [q]Quit ",
+                    ViewMode::TrackInfo => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [+/-]Vol [m]Mute [i/Esc]Close [H]Help [q]Quit ",
+                    ViewMode::Visualizer => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [s]Style [+/-]Vol [m]Mute [v/Esc]Close [H]Help [q]Quit ",
+                    ViewMode::Settings => " [jk]Nav [Enter]Toggle [Space]Play [l/→]Next [h/←]Previous [+/-]Vol [Esc]Close [H]Help [q]Quit ",
                 };
                 (hint.to_string(), Style::default().fg(Color::DarkGray))
             };
-            let status = Paragraph::new(text).style(style);
-            frame.render_widget(status, area);
+            let hint = Paragraph::new(text).style(style).wrap(Wrap { trim: false });
+            frame.render_widget(hint, area);
         }
     }
 
