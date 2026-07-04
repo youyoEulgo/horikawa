@@ -39,6 +39,8 @@ cargo build --release
 
 The binary will be at `target/release/horikawa`.
 
+**A Nerd Font is required** for icons (folder, music, play/pause/stop). We recommend [FiraCode Nerd Font](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/FiraCode) or any other Nerd Font.
+
 ### Windows Installer
 
 Download the latest installer from [Releases](https://github.com/youyoEulgo/horikawa/releases).

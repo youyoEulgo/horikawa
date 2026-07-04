@@ -252,6 +252,10 @@ impl App {
                     self.settings.discord_enabled = settings.discord_enabled;
                     self.settings.smtc_enabled = settings.smtc_enabled;
                 }
+                Ok(StateUpdate::StatusMessage { message }) => {
+                    self.status_message = Some(message);
+                    self.status_clear_at = Some(std::time::Instant::now() + Duration::from_secs(3));
+                }
                 Ok(_) => {} // Ignore other updates
                 Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
                 Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
@@ -469,6 +473,47 @@ impl App {
         }
     }
 
+    /// View-switch keys shared across Playlist, Browser, Playlists, TrackInfo, Visualizer.
+    /// Pressing the same key again returns to Playlist.
+    fn handle_view_jump(&mut self, code: KeyCode) -> bool {
+        match code {
+            KeyCode::Char('b') => {
+                self.view_mode = if self.view_mode == ViewMode::Browser {
+                    ViewMode::Playlist
+                } else {
+                    ViewMode::Browser
+                };
+                true
+            }
+            KeyCode::Char('v') => {
+                self.view_mode = if self.view_mode == ViewMode::Visualizer {
+                    ViewMode::Playlist
+                } else {
+                    ViewMode::Visualizer
+                };
+                true
+            }
+            KeyCode::Char('p') => {
+                if self.view_mode == ViewMode::Playlists {
+                    self.view_mode = ViewMode::Playlist;
+                } else {
+                    self.refresh_playlist_lists();
+                    self.view_mode = ViewMode::Playlists;
+                }
+                true
+            }
+            KeyCode::Char('i') => {
+                self.view_mode = if self.view_mode == ViewMode::TrackInfo {
+                    ViewMode::Playlist
+                } else {
+                    ViewMode::TrackInfo
+                };
+                true
+            }
+            _ => false,
+        }
+    }
+
     fn handle_normal_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         // Global keys (work in any view)
         match code {
@@ -501,75 +546,134 @@ impl App {
                     ViewMode::Playlist => {
                         r#"Playlist Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  Playlist:
   Space  Play/Pause     h/←  Previous       l/→  Next
-  Ctrl+h/l/←→ Seek      s    Save M3U       S    Shuffle
-  r      Repeat         R    Reload         v    Visualizer
-  p      Playlists      b    Browser        i    Track Info
-  +/-    Volume         H    Shortcuts      q    Quit
-  
-  e      Edit Mode
+  Enter  Play Selected  k/↑  Navigate Up    j/↓  Navigate Down  
+  +/-    Volumes        s    Save M3U       S    Shuffle         
+  M      Mute           r    Repeat         R    Reload         
+  Ctrl+h/← Rewind 10 seconds
+
   Edit Mode:
-  Shift+J/K Move        d    Delete         c    Clear
+  e      Edit Mode
+  Shift+j/k Move        d    Delete         c    Clear
+  Ctrl+l/→ Fast forward 10 seconds
+
+  Views:
+  Tab    Next View      Shift+Tab Previous View
+  v      Visualizer     p    Playlists
+  b      Browser        i    Track Info
+
+  Other:
+  /      Cmd            H    Shortcuts      q    Quit
 
   "#
                     }
                     ViewMode::Browser => {
                         r#"Browser Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
-  j/k    Navigate       l/Enter Open|Play   h/Backspace Up
-  a      Add to Playlist                    ~    Home
-  S      Save as Dir Playlist               s    Save M3U
-  .      Toggle Hidden   R    Refresh
-  b/Esc  Close          H    Shortcuts      q    Quit
+  Browser:
+  h/←       Return to parent directory
+  l/→       Enter the selected directory
+  k/↑       Navigate up
+  j/↓       Navigate down
+  a         Add to playlist
+  Enter     Add to playlist and play
+  s         Save as M3U playlist
+  S         Save as Dir playlist
+  R         Refresh
+  ~         Home
+
+  Views:
+  Tab    Next View      Shift+Tab Previous View
+  v      Visualizer     p    Playlists
+  b/Esc  Playlist       i    Track Info
+
+  Other:
+  /      Cmd            H    Shortcuts      q    Quit
+
   "#
                     }
                     ViewMode::Playlists => {
                         r#"Playlists Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
-  j/k    Navigate       Enter Load          d    Delete
-  r      Rename         Space Play/Pause    h/←  Previous
-  l/→    Next           +/-  Volume         p/Esc Close
-  H      Shortcuts      q    Quit
+  Playlists:
+  Enter  Load           d    Delete         r    Rename         
+  Space  Play/Pause     k/↑  Navigate Up    j/↓  Navigate Down
+  +/-    Volumes        h/←  Previous       l/→  Next
+  m      Mute
+
+  Views:
+  Tab    Next View      Shift+Tab Previous View
+  v      Visualizer     p/Esc Playlist
+  b      Browser        i    Track Info
+
+  Other:
+  /      Cmd            H    Shortcuts      q    Quit
+
   "#
                     }
                     ViewMode::TrackInfo => {
                         r#"Track Info Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  TrackInfo:
   Space  Play/Pause     h/←  Previous       l/→  Next
-  Ctrl+h/l/←→ Seek      +/-  Volume         m    Mute
-  i/Esc  Close          H    Shortcuts      q    Quit
+  +/-    Volumes        M    Mute
+  Ctrl+h/← Rewind 10 seconds
+  Ctrl+l/→ Fast forward 10 seconds
+
+  Views:
+  Tab    Next View      Shift+Tab Previous View
+  v      Visualizer      p    Playlists
+  b      Browser        i/Esc Playlist
+
+  Other:
+  /      Cmd            H    Shortcuts      q    Quit
+
   "#
                     }
                     ViewMode::Visualizer => {
                         r#"Visualizer Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
+  Visualizer:
+  s      Style          f    FFT/Volume
   Space  Play/Pause     h/←  Previous       l/→  Next
-  Ctrl+h/l/←→ Seek      s    Style          f    FFT/Volume
-  +/-    Volume         m    Mute           v/Esc Close
-  H      Shortcuts      q    Quit
+  +/-    Volumes        M    Mute
+  Ctrl+h/← Rewind 10 seconds
+  Ctrl+l/→ Fast forward 10 seconds
+
+  Views:
+  Tab    Next View      Shift+Tab Previous View
+  v/Esc  playlist       p    Playlists
+  b      Browser        i    Track Info
+
+  Other:
+  /      Cmd            H    Shortcuts      q    Quit
+
   "#
                     }
                     ViewMode::Settings => {
                         r#"Settings Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
-  j/k    Navigate       Enter Toggle
-  Space  Play/Pause     h/←  Previous       l/→  Next
-  +/-    Volume         m    Mute
-  Esc    Close          H    Shortcuts      q    Quit
+  Settings:
+  Enter  Toggle         j/↓   Navigate       k/↑  Navigate
+  Space  Play/Pause     h/←  Previous        l/→  Next
+  +/-    Volumes        M    Mute
+
+  Other:
+  /      Cmd            Esc  Close           H    Shortcuts
+  q      Quit
   "#
                     }
                     ViewMode::Help => {
                         r#"Help Shortcuts
 
-  /      Cmd            Tab  Next View      Shift+Tab Previous View
-  j/k    Scroll         PgUp/PgDn Page
-  Esc/?  Close          H    Shortcuts      q    Quit
+  Help:
+  j/↓    Scroll Down    k/↑  Scroll Up
+  PgDn   Page Down      PgUp Page Up
+
+  Other:
+  /      Cmd            Esc/? Close          H    Shortcuts
+  q      Quit
   "#
                     }
                 };
@@ -612,6 +716,9 @@ impl App {
     }
 
     fn handle_playlist_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        if self.handle_view_jump(code) {
+            return;
+        }
         match code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
@@ -749,16 +856,6 @@ impl App {
                     if new_shuffle { "on" } else { "off" }
                 ));
             }
-            KeyCode::Char('b') => {
-                self.view_mode = ViewMode::Browser;
-            }
-            KeyCode::Char('v') => {
-                self.view_mode = ViewMode::Visualizer;
-            }
-            KeyCode::Char('p') => {
-                self.refresh_playlist_lists();
-                self.view_mode = ViewMode::Playlists;
-            }
             KeyCode::Char('+') | KeyCode::Char('=') => {
                 // Volume up
                 self.volume = (self.volume + 0.05).min(1.0);
@@ -801,11 +898,14 @@ impl App {
     }
 
     fn handle_browser_key(&mut self, code: KeyCode) {
+        if self.handle_view_jump(code) {
+            return;
+        }
         match code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
-            KeyCode::Char('b') | KeyCode::Esc => {
+            KeyCode::Esc => {
                 self.view_mode = ViewMode::Playlist;
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -816,34 +916,23 @@ impl App {
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 if let Ok(Some(file_path)) = self.browser.enter_selected() {
-                    let idx = self.player.playlist().read().unwrap().len();
-                    self.send_command(AppCommand::AddPath {
+                    self.send_command(AppCommand::PlayPath {
                         path: file_path.to_string_lossy().to_string(),
                     });
-                    self.send_command(AppCommand::PlayTrack { index: idx });
-                    self.set_status("Playing");
                 }
             }
             KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
                 let _ = self.browser.go_up();
             }
             KeyCode::Char('a') => {
-                // Add selected to playlist (file or entire folder)
                 if let Some(entry) = self.browser.selected_entry() {
                     let path = entry.path.clone();
                     let is_dir = entry.is_dir;
                     let is_audio = entry.is_audio;
-
-                    if is_dir && entry.name != ".." {
+                    if (is_dir && entry.name != "..") || is_audio {
                         self.send_command(AppCommand::AddPath {
                             path: path.to_string_lossy().to_string(),
                         });
-                        self.set_status("Adding to playlist...");
-                    } else if is_audio {
-                        self.send_command(AppCommand::AddPath {
-                            path: path.to_string_lossy().to_string(),
-                        });
-                        self.set_status("Added to playlist");
                     }
                 }
             }
@@ -949,11 +1038,14 @@ impl App {
     }
 
     fn handle_track_info_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        if self.handle_view_jump(code) {
+            return;
+        }
         match code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
-            KeyCode::Esc | KeyCode::Char('i') => {
+            KeyCode::Esc => {
                 self.view_mode = ViewMode::Playlist;
             }
             // Playback controls
@@ -1023,11 +1115,14 @@ impl App {
     }
 
     fn handle_visualizer_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        if self.handle_view_jump(code) {
+            return;
+        }
         match code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
-            KeyCode::Esc | KeyCode::Char('v') => {
+            KeyCode::Esc => {
                 self.view_mode = ViewMode::Playlist;
             }
             KeyCode::Char('s') => {
@@ -1755,11 +1850,14 @@ impl App {
 
     /// Handles keyboard input for the Playlists view.
     fn handle_playlists_key(&mut self, code: KeyCode) {
+        if self.handle_view_jump(code) {
+            return;
+        }
         match code {
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
-            KeyCode::Esc | KeyCode::Char('p') => {
+            KeyCode::Esc => {
                 self.view_mode = ViewMode::Playlist;
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -2157,7 +2255,7 @@ fn draw_playlist(frame: &mut Frame, app: &mut App, area: Rect) {
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown");
             let prefix = if Some(i) == playing_index {
-                                "\u{f04b} "
+                "\u{f04b} "
             } else if app.edit_mode {
                 "≡ "
             } else {
@@ -2528,7 +2626,9 @@ fn draw_now_playing(frame: &mut Frame, app: &App, area: Rect) {
         "Mute".to_string()
     } else {
         let blocks = (vol_pct as usize + 9) / 10;
-        let bar: String = (0..10).map(|i| if i < blocks { '█' } else { '░' }).collect();
+        let bar: String = (0..10)
+            .map(|i| if i < blocks { '█' } else { '░' })
+            .collect();
         format!("{} {}%", bar, vol_pct)
     };
 

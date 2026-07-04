@@ -27,6 +27,7 @@ pub enum AppCommand {
     // Playlist
     PlayTrack { index: usize },
     AddPath { path: String },
+    PlayPath { path: String },
     RemoveTrack { index: usize },
     ClearPlaylist,
     ToggleShuffle,

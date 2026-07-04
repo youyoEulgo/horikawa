@@ -494,19 +494,74 @@ impl CommandProcessor {
                 self.broadcast_playlist();
             }
             AppCommand::AddPath { path } => {
-                let path = PathBuf::from( &path );
+                let path = PathBuf::from(&path);
                 if path.is_dir() {
                     let mut scanner = LibraryScanner::new();
-                    scanner.add_root( path );
-                    if let Ok( tracks ) = scanner.scan() {
+                    scanner.add_root(path);
+                    if let Ok(tracks) = scanner.scan() {
                         let playlist_arc = self.player.playlist();
                         let mut playlist = playlist_arc.write().unwrap();
-                        playlist.add_many( tracks.into_iter().map( |t| t.path ) );
+                        let existing = playlist.len();
+                        for t in tracks {
+                            if playlist.find_index(&t.path).is_none() {
+                                playlist.add(t.path);
+                            }
+                        }
+                        let added = playlist.len() - existing;
+                        drop(playlist);
+                        self.broadcast_playlist();
+                        let _ = self.broadcast_tx.send(StateUpdate::StatusMessage {
+                            message: if added == 0 {
+                                "Already in playlist".to_string()
+                            } else {
+                                format!("Added {} tracks", added)
+                            },
+                        });
                     }
                 } else {
                     let playlist_arc = self.player.playlist();
                     let mut playlist = playlist_arc.write().unwrap();
-                    playlist.add( path );
+                    if playlist.find_index(&path).is_some() {
+                        drop(playlist);
+                        let _ = self.broadcast_tx.send(StateUpdate::StatusMessage {
+                            message: "Already in playlist".to_string(),
+                        });
+                    } else {
+                        playlist.add(path);
+                        drop(playlist);
+                        self.broadcast_playlist();
+                        let _ = self.broadcast_tx.send(StateUpdate::StatusMessage {
+                            message: "Added to playlist".to_string(),
+                        });
+                    }
+                }
+            }
+            AppCommand::PlayPath { path } => {
+                let path = PathBuf::from(&path);
+                let playlist_arc = self.player.playlist();
+                // Check if already in playlist
+                let idx = {
+                    let playlist = playlist_arc.read().unwrap();
+                    playlist.find_index(&path)
+                };
+                let idx = if let Some(idx) = idx {
+                    idx
+                } else {
+                    // Not in list — add it
+                    let mut playlist = playlist_arc.write().unwrap();
+                    playlist.add(path);
+                    let idx = playlist.len() - 1;
+                    drop(playlist);
+                    self.broadcast_playlist();
+                    idx
+                };
+                // Play it
+                let track = {
+                    let mut playlist = playlist_arc.write().unwrap();
+                    playlist.jump_to(idx).cloned()
+                };
+                if let Some(path) = track {
+                    let _ = self.player.play(path);
                 }
                 self.broadcast_playlist();
             }

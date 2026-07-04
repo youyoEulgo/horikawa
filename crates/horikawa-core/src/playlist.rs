@@ -317,6 +317,11 @@ impl Playlist {
         original_len - self.tracks.len()
     }
 
+    /// Finds the index of a track by path.
+    pub fn find_index(&self, path: &Path) -> Option<usize> {
+        self.tracks.iter().position(|t| t == path)
+    }
+
 
     /// Saves the playlist to a file (M3U format).
     pub fn save( &self, path: &Path ) -> Result<(), PlaylistError> {
