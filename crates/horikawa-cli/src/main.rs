@@ -521,6 +521,7 @@ impl App {
   j/k    Navigate       l/Enter Open|Play   h/Backspace Up
   a      Add to Playlist                    ~    Home
   S      Save as Dir Playlist               s    Save M3U
+  .      Toggle Hidden   R    Refresh
   b/Esc  Close          H    Shortcuts      q    Quit
   "#
                     }
@@ -902,6 +903,10 @@ impl App {
             KeyCode::Char('R') => {
                 let _ = self.browser.refresh();
                 self.set_status("Refreshed");
+            }
+            KeyCode::Char('.') => {
+                let _ = self.browser.toggle_hidden();
+                self.set_status("Toggled hidden files");
             }
             KeyCode::Home | KeyCode::Char('g') => {
                 self.browser.select_first();
@@ -2152,7 +2157,7 @@ fn draw_playlist(frame: &mut Frame, app: &mut App, area: Rect) {
                 .and_then(|n| n.to_str())
                 .unwrap_or("Unknown");
             let prefix = if Some(i) == playing_index {
-                "▶ "
+                                "\u{f04b} "
             } else if app.edit_mode {
                 "≡ "
             } else {
@@ -2448,9 +2453,9 @@ fn draw_track_info(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_now_playing(frame: &mut Frame, app: &App, area: Rect) {
     let state = app.player.state();
     let state_str = match state {
-        PlaybackState::Playing => "⏸",
-        PlaybackState::Paused => "▶",
-        PlaybackState::Stopped => "⏹",
+        PlaybackState::Playing => "\u{f04c}",
+        PlaybackState::Paused => "\u{f04b}",
+        PlaybackState::Stopped => "\u{f04d}",
     };
 
     // Get metadata if available
@@ -2966,7 +2971,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 let hint = match app.view_mode {
                     ViewMode::Playlist => " [Space]Play [h/←]Previous [l/→]Next [+/-]Vol [m]Mute [H]Help [q]Quit ",
-                    ViewMode::Browser => " [jk]Nav [l/Enter]Play [h/Backspace]Up [a]Add [s]SaveM3U [S]SaveDir [~]Home [b/Esc]Close [H]Help [q]Quit ",
+                    ViewMode::Browser => " [jk]Nav [l/Enter]Play [h/Backspace]Up [a]Add [s]SaveM3U [S]SaveDir [.]Hidden [~]Home [b/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [r]Rename [Space]Play [l/→]Next [h/←]Previous [+/-]Vol [p/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Help => " [jk]Scroll [PgUp/PgDn]Page [Esc/?]Close [q]Quit ",
                     ViewMode::TrackInfo => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [+/-]Vol [m]Mute [i/Esc]Close [H]Help [q]Quit ",

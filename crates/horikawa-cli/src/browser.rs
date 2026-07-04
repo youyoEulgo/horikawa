@@ -30,6 +30,7 @@ pub struct FileBrowser {
     filtered_indices: Vec<usize>,
     selected: usize,
     filter: String,
+    show_hidden: bool,
 }
 
 impl FileBrowser {
@@ -41,6 +42,7 @@ impl FileBrowser {
             filtered_indices: Vec::new(),
             selected: 0,
             filter: String::new(),
+            show_hidden: false,
         };
         browser.refresh()?;
         Ok(browser)
@@ -72,8 +74,8 @@ impl FileBrowser {
                 let path = entry.path();
                 let name = entry.file_name().to_string_lossy().to_string();
 
-                // Skip hidden files (starting with .)
-                if name.starts_with('.') {
+                // Skip hidden files unless show_hidden is enabled
+                if name != ".." && name.starts_with('.') && !self.show_hidden {
                     continue;
                 }
 
@@ -252,6 +254,12 @@ impl FileBrowser {
     /// Returns true if there are no visible entries.
     pub fn is_empty(&self) -> bool {
         self.filtered_indices.is_empty()
+    }
+
+    /// Toggles showing hidden files/directories.
+    pub fn toggle_hidden(&mut self) -> Result<()> {
+        self.show_hidden = !self.show_hidden;
+        self.refresh()
     }
 
     fn is_audio_file(path: &Path) -> bool {
