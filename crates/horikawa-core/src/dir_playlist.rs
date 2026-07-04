@@ -38,24 +38,12 @@ pub enum DirPlaylistError {
 /// each directory is recursively scanned for audio files.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirectoryPlaylist {
-    /// Display name for the playlist.
-    pub name: String,
-
     /// One or more directory paths to scan when loaded.
     pub directories: Vec<String>,
 }
 
 
 impl DirectoryPlaylist {
-    /// Creates a new directory playlist with a single directory.
-    pub fn new(name: String, directory: String) -> Self {
-        Self {
-            name,
-            directories: vec![directory],
-        }
-    }
-
-
     /// Scans all directories and returns discovered audio file paths.
     ///
     /// Uses `LibraryScanner` for recursive scanning with the same
@@ -84,7 +72,7 @@ impl DirectoryPlaylist {
     ///
     /// The file is written to the standard playlist directory
     /// (`~/.local/share/horikawa/playlists/<name>.horikawa`).
-    pub fn save(&self) -> Result<PathBuf, DirPlaylistError> {
+    pub fn save(&self, name: &str) -> Result<PathBuf, DirPlaylistError> {
         let dir = Self::playlist_dir()
             .ok_or_else(|| {
                 DirPlaylistError::Io(std::io::Error::new(
@@ -94,7 +82,7 @@ impl DirectoryPlaylist {
             })?;
 
         fs::create_dir_all(&dir)?;
-        let path = dir.join(format!("{}.horikawa", self.name));
+        let path = dir.join(format!("{}.horikawa", name));
 
         let json = serde_json::to_string_pretty(self)?;
         fs::write(&path, json)?;

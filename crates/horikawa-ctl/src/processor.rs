@@ -760,8 +760,10 @@ impl CommandProcessor {
 
             // Directory playlist management
             AppCommand::SaveDirPlaylist { name, directory } => {
-                let dpl = DirectoryPlaylist::new( name.clone(), directory.clone() );
-                match dpl.save() {
+                let dpl = DirectoryPlaylist {
+                    directories: vec![directory.clone()],
+                };
+                match dpl.save(&name) {
                     Ok( _ ) => {
                         let _ = self.broadcast_tx.send( StateUpdate::StatusMessage {
                             message: format!( "Saved directory playlist: {}", name ),
