@@ -4,7 +4,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-> 取名自东方Project的堀川雷鼓，能力是「让一切跟上节奏程度的能力」。
+> 堀川雷鼓「让一切跟上节奏程度的能力」。
 
 ## 功能
 

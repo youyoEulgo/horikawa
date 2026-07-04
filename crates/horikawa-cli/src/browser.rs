@@ -31,6 +31,7 @@ pub struct FileBrowser {
     selected: usize,
     filter: String,
     show_hidden: bool,
+    scroll_offset: usize,
 }
 
 impl FileBrowser {
@@ -43,6 +44,7 @@ impl FileBrowser {
             selected: 0,
             filter: String::new(),
             show_hidden: false,
+            scroll_offset: 0,
         };
         browser.refresh()?;
         Ok(browser)
@@ -53,6 +55,7 @@ impl FileBrowser {
         self.entries.clear();
         self.filtered_indices.clear();
         self.selected = 0;
+        self.scroll_offset = 0;
 
         // Add parent directory entry (unless at root)
         if let Some(parent) = self.current_dir.parent() {
@@ -191,34 +194,87 @@ impl FileBrowser {
         }
     }
 
-    /// Moves selection down.
-    pub fn select_next(&mut self) {
-        if !self.filtered_indices.is_empty() {
-            self.selected = (self.selected + 1) % self.filtered_indices.len();
+    /// Yazi-style scroll: moves scroll_offset at most ±1 per step, only
+    /// when the selected item enters the MARGIN zone at the top or bottom edge.
+    const SCROLL_MARGIN: usize = 4;
+
+    fn clamp_scroll(&mut self, visible_height: usize, jumped: bool) {
+        let total = self.filtered_indices.len();
+        if total == 0 || visible_height <= 1 {
+            self.scroll_offset = 0;
+            return;
         }
+        if total <= visible_height {
+            self.scroll_offset = 0;
+            return;
+        }
+        let max = total - visible_height;
+        if jumped {
+            // Large jump: keep selection visible with margin
+            if self.selected < self.scroll_offset + Self::SCROLL_MARGIN {
+                self.scroll_offset = self.selected.saturating_sub(Self::SCROLL_MARGIN);
+            }
+            if self.selected > self.scroll_offset + visible_height.saturating_sub(Self::SCROLL_MARGIN + 2) {
+                self.scroll_offset = (self.selected + Self::SCROLL_MARGIN + 1)
+                    .saturating_sub(visible_height)
+                    .min(max);
+            }
+        } else {
+            let rel = self.selected.saturating_sub(self.scroll_offset);
+            if rel <= Self::SCROLL_MARGIN {
+                self.scroll_offset = self.scroll_offset.saturating_sub(1);
+            }
+            if rel >= visible_height.saturating_sub(Self::SCROLL_MARGIN + 1) {
+                self.scroll_offset = (self.scroll_offset + 1).min(max);
+            }
+        }
+    }
+
+    /// Moves selection down.
+    pub fn select_next(&mut self, visible_height: usize) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
+        let old = self.selected;
+        self.selected = (self.selected + 1) % self.filtered_indices.len();
+        self.clamp_scroll(visible_height, self.selected < old);
     }
 
     /// Moves selection up.
-    pub fn select_previous(&mut self) {
-        if !self.filtered_indices.is_empty() {
-            self.selected = if self.selected == 0 {
-                self.filtered_indices.len() - 1
-            } else {
-                self.selected - 1
-            };
+    pub fn select_previous(&mut self, visible_height: usize) {
+        if self.filtered_indices.is_empty() {
+            return;
         }
+        let jumped = self.selected == 0;
+        self.selected = if jumped {
+            self.filtered_indices.len() - 1
+        } else {
+            self.selected - 1
+        };
+        self.clamp_scroll(visible_height, jumped);
     }
 
     /// Jumps to first entry.
-    pub fn select_first(&mut self) {
+    pub fn select_first(&mut self, visible_height: usize) {
+        if self.filtered_indices.is_empty() {
+            return;
+        }
         self.selected = 0;
+        self.clamp_scroll(visible_height, true);
     }
 
     /// Jumps to last entry.
-    pub fn select_last(&mut self) {
-        if !self.filtered_indices.is_empty() {
-            self.selected = self.filtered_indices.len() - 1;
+    pub fn select_last(&mut self, visible_height: usize) {
+        if self.filtered_indices.is_empty() {
+            return;
         }
+        self.selected = self.filtered_indices.len() - 1;
+        self.clamp_scroll(visible_height, true);
+    }
+
+    /// Gets the current scroll offset for the UI list.
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
     }
 
     /// Gets the currently selected entry.

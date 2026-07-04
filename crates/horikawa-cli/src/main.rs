@@ -897,7 +897,14 @@ impl App {
         }
     }
 
+    /// Visible rows available in the browser list widget (~ terminal rows minus header/nowplaying/status).
+    fn browser_visible_rows() -> usize {
+        let h = crossterm::terminal::size().unwrap_or((80, 24)).1;
+        (h.saturating_sub(11) as usize).max(1)
+    }
+
     fn handle_browser_key(&mut self, code: KeyCode) {
+        let visible = Self::browser_visible_rows();
         if self.handle_view_jump(code) {
             return;
         }
@@ -909,10 +916,10 @@ impl App {
                 self.view_mode = ViewMode::Playlist;
             }
             KeyCode::Up | KeyCode::Char('k') => {
-                self.browser.select_previous();
+                self.browser.select_previous(visible);
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.browser.select_next();
+                self.browser.select_next(visible);
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 if let Ok(Some(file_path)) = self.browser.enter_selected() {
@@ -998,10 +1005,10 @@ impl App {
                 self.set_status("Toggled hidden files");
             }
             KeyCode::Home | KeyCode::Char('g') => {
-                self.browser.select_first();
+                self.browser.select_first(visible);
             }
             KeyCode::End | KeyCode::Char('G') => {
-                self.browser.select_last();
+                self.browser.select_last(visible);
             }
             KeyCode::Char('~') => {
                 if let Some(home) = dirs::home_dir() {
@@ -2334,10 +2341,18 @@ fn draw_browser(frame: &mut Frame, app: &mut App, area: Rect) {
         })
         .collect();
 
-    let mut state = ListState::default();
-    state.select(Some(app.browser.selected_index()));
+    let all_items = items;
+    let scroll = app.browser.scroll_offset();
+    let total = all_items.len();
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let end = (scroll + visible_height).min(total);
+    let slice = &all_items[scroll..end];
 
-    let browser_widget = List::new(items)
+    let mut state = ListState::default();
+    let rel = app.browser.selected_index().saturating_sub(scroll);
+    state.select(Some(rel.min(visible_height.saturating_sub(1))));
+
+    let browser_widget = List::new(slice.iter().cloned().collect::<Vec<_>>())
         .block(Block::default().title(title).borders(Borders::ALL))
         .highlight_style(Style::default().bg(Color::DarkGray))
         .highlight_symbol(">> ");
