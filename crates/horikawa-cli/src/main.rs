@@ -552,11 +552,11 @@ impl App {
   +/-    Volumes        s    Save M3U       S    Shuffle         
   M      Mute           r    Repeat         R    Reload         
   Ctrl+h/← Rewind 10 seconds
+  Ctrl+l/→ Fast forward 10 seconds
 
   Edit Mode:
   e      Edit Mode
   Shift+j/k Move        d    Delete         c    Clear
-  Ctrl+l/→ Fast forward 10 seconds
 
   Views:
   Tab    Next View      Shift+Tab Previous View
