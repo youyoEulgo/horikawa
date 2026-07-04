@@ -523,7 +523,7 @@ impl App {
                         r#"Browser Shortcuts
 
   /      Cmd            Tab  Next View      Shift+Tab Previous View
-  j/k    Navigate       l/Enter Open        h/Backspace Up
+  j/k    Navigate       l/Enter Open|Play   h/Backspace Up
   a      Add to Playlist                    ~    Home
   S      Save as Dir Playlist               s    Save M3U
   b/Esc  Close          H    Shortcuts      q    Quit
@@ -820,10 +820,12 @@ impl App {
             }
             KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                 if let Ok(Some(file_path)) = self.browser.enter_selected() {
+                    let idx = self.player.playlist().read().unwrap().len();
                     self.send_command(AppCommand::AddPath {
                         path: file_path.to_string_lossy().to_string(),
                     });
-                    self.set_status("Added to playlist");
+                    self.send_command(AppCommand::PlayTrack { index: idx });
+                    self.set_status("Playing");
                 }
             }
             KeyCode::Backspace | KeyCode::Char('h') | KeyCode::Left => {
@@ -2515,8 +2517,8 @@ fn draw_track_info(frame: &mut Frame, app: &App, area: Rect) {
 fn draw_now_playing(frame: &mut Frame, app: &App, area: Rect) {
     let state = app.player.state();
     let state_str = match state {
-        PlaybackState::Playing => "▶",
-        PlaybackState::Paused => "⏸",
+        PlaybackState::Playing => "⏸",
+        PlaybackState::Paused => "▶",
         PlaybackState::Stopped => "⏹",
     };
 
@@ -3048,7 +3050,7 @@ fn draw_status_bar(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 let hint = match app.view_mode {
                     ViewMode::Playlist => " [Space]Play [h/←]Previous [l/→]Next [+/-]Vol [m]Mute [H]Help [q]Quit ",
-                    ViewMode::Browser => " [jk]Nav [l/Enter]Open [h/Backspace]Up [a]Add [s]SaveM3U [S]SaveDir [~]Home [b/Esc]Close [H]Help [q]Quit ",
+                    ViewMode::Browser => " [jk]Nav [l/Enter]Play [h/Backspace]Up [a]Add [s]SaveM3U [S]SaveDir [~]Home [b/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Playlists => " [jk]Nav [Enter]Load [d]Del [r]Rename [Space]Play [l/→]Next [h/←]Previous [+/-]Vol [p/Esc]Close [H]Help [q]Quit ",
                     ViewMode::Help => " [jk]Scroll [PgUp/PgDn]Page [Esc/?]Close [q]Quit ",
                     ViewMode::TrackInfo => " [Space]Play [l/→]Next [h/←]Previous [Ctrl+h/l/←→]Seek [+/-]Vol [m]Mute [i/Esc]Close [H]Help [q]Quit ",
