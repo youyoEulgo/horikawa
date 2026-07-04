@@ -2212,9 +2212,9 @@ fn draw_browser(frame: &mut Frame, app: &mut App, area: Rect) {
         .iter()
         .map(|entry| {
             let icon = if entry.is_dir {
-                "📁"
+                "\u{f07b} "
             } else if entry.is_audio {
-                "🎵"
+                "\u{f001} "
             } else {
                 "  "
             };
@@ -2520,9 +2520,11 @@ fn draw_now_playing(frame: &mut Frame, app: &App, area: Rect) {
     // Show volume indicator
     let vol_pct = (app.volume * 100.0) as i32;
     let vol_str = if vol_pct == 0 {
-        "🔇".to_string()
+        "Mute".to_string()
     } else {
-        format!("🔊{}%", vol_pct)
+        let blocks = (vol_pct as usize + 9) / 10;
+        let bar: String = (0..10).map(|i| if i < blocks { '█' } else { '░' }).collect();
+        format!("{} {}%", bar, vol_pct)
     };
 
     lines.push(Line::from(format!(
