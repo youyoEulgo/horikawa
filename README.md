@@ -41,10 +41,6 @@ The binary will be at `target/release/horikawa`.
 
 **A Nerd Font is required** for icons (folder, music, play/pause/stop). We recommend [FiraCode Nerd Font](https://github.com/ryanoasis/nerd-fonts/tree/master/patched-fonts/FiraCode) or any other Nerd Font.
 
-### Windows Installer
-
-Download the latest installer from [Releases](https://github.com/youyoEulgo/horikawa/releases).
-
 ## Usage
 
 ```bash
@@ -63,111 +59,224 @@ horikawa /path/to/music/
 
 ## Keyboard Shortcuts
 
-### Global (all views)
+### Playlist
 
-| Key                 | Action                            |
-| ------------------- | --------------------------------- |
-| `Tab` / `Shift+Tab` | Next / previous view              |
-| `/`                 | Enter slash command mode          |
-| `H`                 | Show per-view shortcut help popup |
-| `q`                 | Quit                              |
+| Key            | Action                                     |
+| -------------- | ------------------------------------------ |
+| `Space`        | Play / Pause                               |
+| `h` / `←`      | Previous track                             |
+| `l` / `→`      | Next track                                 |
+| `Enter`        | Play the selected track                    |
+| `k` / `↑`      | Move selection up                          |
+| `j` / `↓`      | Move selection down                        |
+| `g` / `Home`   | Jump to first track                        |
+| `G` / `End`    | Jump to last track                         |
+| `+` / `-`      | Volume up / down                           |
+| `m`            | Mute / unmute                              |
+| `s`            | Save current playlist as M3U (name prompt) |
+| `S`            | Toggle shuffle                             |
+| `r`            | Cycle repeat mode (Off → One → All)        |
+| `R`            | Reload the last loaded playlist            |
+| `Ctrl+h` / `←` | Rewind 10 seconds                          |
+| `Ctrl+l` / `→` | Fast-forward 10 seconds                    |
 
-### Playback (available in most views)
+Edit Mode (`e` to enter):
 
-| Key                 | Action                                  |
-| ------------------- | --------------------------------------- |
-| `Space`             | Play / Pause                            |
-| `h` / `←`           | Previous track                          |
-| `l` / `→`           | Next track                              |
-| `Ctrl+h` / `Ctrl+l` | Seek backward / forward 10s             |
-| `Ctrl+←` / `Ctrl+→` | Seek backward / forward 10s (non-macOS) |
-| `+` / `=`           | Volume up                               |
-| `-` / `_`           | Volume down                             |
-| `m`                 | Mute / unmute                           |
+| Key                   | Action                        |
+| --------------------- | ----------------------------- |
+| `e`                   | Toggle edit mode              |
+| `Shift+j` / `Shift+k` | Move selected track down / up |
+| `d`                   | Delete selected track         |
+| `c`                   | Clear entire playlist         |
 
-### Playlist View
+Views:
 
-| Key                   | Action                                     |
-| --------------------- | ------------------------------------------ |
-| `↑` / `k`             | Move selection up                          |
-| `↓` / `j`             | Move selection down                        |
-| `g` / `Home`          | Go to first track                          |
-| `G` / `End`           | Go to last track                           |
-| `Enter`               | Play selected track                        |
-| `s`                   | Save current playlist as M3U (name prompt) |
-| `S`                   | Toggle shuffle                             |
-| `r`                   | Cycle repeat mode (Off → One → All)        |
-| `R`                   | Reload last loaded playlist                |
-| `e`                   | Toggle edit mode                           |
-| `d`                   | Delete track (edit mode only)              |
-| `c`                   | Clear playlist (edit mode only)            |
-| `Shift+J` / `Shift+K` | Move track down / up (edit mode only)      |
-| `v`                   | Open Visualizer                            |
-| `p`                   | Open Playlists view                        |
-| `b`                   | Open Browser view                          |
-| `i`                   | Open Track Info view                       |
-| `H`                   | Show Playlist shortcuts popup              |
+| Key                 | Action               |
+| ------------------- | -------------------- |
+| `Tab` / `Shift+Tab` | Next / previous view |
+| `v`                 | Open Visualizer      |
+| `p`                 | Open Playlists       |
+| `b`                 | Open Browser         |
+| `i`                 | Open Track Info      |
 
-### Browser View
+Other:
 
-| Key                     | Action                                             |
-| ----------------------- | -------------------------------------------------- |
-| `↑` / `k`               | Move selection up                                  |
-| `↓` / `j`               | Move selection down                                |
-| `l` / `Enter` / `→`     | Enter directory / add file to playlist             |
-| `h` / `Backspace` / `←` | Go to parent directory                             |
-| `a`                     | Add selected file or folder to playlist            |
-| `s`                     | Save selected directory as M3U (name prompt)       |
-| `S`                     | Save selected directory as .horikawa (name prompt) |
-| `R`                     | Refresh directory listing                          |
-| `~`                     | Go to home directory                               |
-| `g` / `Home`            | Go to first entry                                  |
-| `G` / `End`             | Go to last entry                                   |
-| `b` / `Esc`             | Return to Playlist view                            |
-| `H`                     | Show Browser shortcuts popup                       |
+| Key | Action                            |
+| --- | --------------------------------- |
+| `/` | Enter slash command mode          |
+| `H` | Show per-view shortcut help popup |
+| `q` | Quit                              |
 
-### Playlists View
+### Browser
 
-| Key         | Action                                        |
-| ----------- | --------------------------------------------- |
-| `↑` / `k`   | Move selection up                             |
-| `↓` / `j`   | Move selection down                           |
-| `Enter`     | Load selected playlist                        |
-| `d`         | Delete selected playlist (confirmation popup) |
-| `r`         | Rename selected playlist (input popup)        |
-| `p` / `Esc` | Return to Playlist view                       |
-| `H`         | Show Playlists shortcuts popup                |
+| Key                     | Action                                                     |
+| ----------------------- | ---------------------------------------------------------- |
+| `h` / `←` / `Backspace` | Go to parent directory                                     |
+| `l` / `→` / `Enter`     | Enter directory, or play file (adds to playlist if new)    |
+| `k` / `↑`               | Move selection up                                          |
+| `j` / `↓`               | Move selection down                                        |
+| `a`                     | Add selected file or folder to playlist (skips duplicates) |
+| `Enter`                 | Enter directory, or play file (adds to playlist if new)    |
+| `s`                     | Save selected directory as M3U (name prompt)               |
+| `S`                     | Save selected directory as .horikawa (name prompt)         |
+| `.`                     | Toggle hidden files (.dotfiles)                            |
+| `R`                     | Refresh directory listing                                  |
+| `~`                     | Go to home directory                                       |
+| `g` / `Home`            | Jump to first entry                                        |
+| `G` / `End`             | Jump to last entry                                         |
 
-### Track Info View
+Views:
 
-| Key         | Action                  |
-| ----------- | ----------------------- |
-| `i` / `Esc` | Return to Playlist view |
+| Key                 | Action               |
+| ------------------- | -------------------- |
+| `Tab` / `Shift+Tab` | Next / previous view |
+| `v`                 | Open Visualizer      |
+| `p`                 | Open Playlists       |
+| `b` / `Esc`         | Return to Playlist   |
+| `i`                 | Open Track Info      |
 
-### Visualizer View
+Other:
 
-| Key         | Action                                                            |
-| ----------- | ----------------------------------------------------------------- |
-| `s`         | Cycle visualizer style (Bars → Spectrum → Waveform → Level Meter) |
-| `v` / `Esc` | Return to Playlist view                                           |
+| Key | Action                       |
+| --- | ---------------------------- |
+| `/` | Enter slash command mode     |
+| `H` | Show Browser shortcuts popup |
+| `q` | Quit                         |
 
-### Settings View
+### Playlists
 
-| Key       | Action                  |
-| --------- | ----------------------- |
-| `↑` / `k` | Move selection up       |
-| `↓` / `j` | Move selection down     |
-| `Enter`   | Toggle setting          |
-| `Esc`     | Return to Playlist view |
+| Key       | Action                                        |
+| --------- | --------------------------------------------- |
+| `Enter`   | Load the selected playlist                    |
+| `d`       | Delete selected playlist (confirmation popup) |
+| `r`       | Rename selected playlist (input popup)        |
+| `Space`   | Play / Pause                                  |
+| `k` / `↑` | Move selection up                             |
+| `j` / `↓` | Move selection down                           |
+| `+` / `-` | Volume up / down                              |
+| `h` / `←` | Previous track                                |
+| `l` / `→` | Next track                                    |
+| `m`       | Mute / unmute                                 |
 
-### Help View
+Views:
 
-| Key             | Action         |
-| --------------- | -------------- |
-| `↑` / `k`       | Scroll up      |
-| `↓` / `j`       | Scroll down    |
-| `PgUp` / `PgDn` | Page up / down |
-| `?` / `Esc`     | Close help     |
+| Key                 | Action               |
+| ------------------- | -------------------- |
+| `Tab` / `Shift+Tab` | Next / previous view |
+| `v`                 | Open Visualizer      |
+| `p` / `Esc`         | Return to Playlist   |
+| `b`                 | Open Browser         |
+| `i`                 | Open Track Info      |
+
+Other:
+
+| Key | Action                         |
+| --- | ------------------------------ |
+| `/` | Enter slash command mode       |
+| `H` | Show Playlists shortcuts popup |
+| `q` | Quit                           |
+
+### Track Info
+
+| Key            | Action                  |
+| -------------- | ----------------------- |
+| `Space`        | Play / Pause            |
+| `h` / `←`      | Previous track          |
+| `l` / `→`      | Next track              |
+| `Ctrl+h` / `←` | Rewind 10 seconds       |
+| `Ctrl+l` / `→` | Fast-forward 10 seconds |
+| `+` / `-`      | Volume up / down        |
+| `m`            | Mute / unmute           |
+
+Views:
+
+| Key                 | Action               |
+| ------------------- | -------------------- |
+| `Tab` / `Shift+Tab` | Next / previous view |
+| `v`                 | Open Visualizer      |
+| `p`                 | Open Playlists       |
+| `b`                 | Open Browser         |
+| `i` / `Esc`         | Return to Playlist   |
+
+Other:
+
+| Key | Action                          |
+| --- | ------------------------------- |
+| `/` | Enter slash command mode        |
+| `H` | Show Track Info shortcuts popup |
+| `q` | Quit                            |
+
+### Visualizer
+
+| Key            | Action                                                 |
+| -------------- | ------------------------------------------------------ |
+| `s`            | Cycle style (Bars → Spectrum → Waveform → Level Meter) |
+| `f`            | Toggle FFT spectrum / RMS volume meter                 |
+| `Space`        | Play / Pause                                           |
+| `h` / `←`      | Previous track                                         |
+| `l` / `→`      | Next track                                             |
+| `Ctrl+h` / `←` | Rewind 10 seconds                                      |
+| `Ctrl+l` / `→` | Fast-forward 10 seconds                                |
+| `+` / `-`      | Volume up / down                                       |
+| `m`            | Mute / unmute                                          |
+
+Views:
+
+| Key                 | Action               |
+| ------------------- | -------------------- |
+| `Tab` / `Shift+Tab` | Next / previous view |
+| `v` / `Esc`         | Return to Playlist   |
+| `p`                 | Open Playlists       |
+| `b`                 | Open Browser         |
+| `i`                 | Open Track Info      |
+
+Other:
+
+| Key | Action                          |
+| --- | ------------------------------- |
+| `/` | Enter slash command mode        |
+| `H` | Show Visualizer shortcuts popup |
+| `q` | Quit                            |
+
+### Settings
+
+| Key       | Action                      |
+| --------- | --------------------------- |
+| `Enter`   | Toggle the selected setting |
+| `k` / `↑` | Move selection up           |
+| `j` / `↓` | Move selection down         |
+| `Space`   | Play / Pause                |
+| `h` / `←` | Previous track              |
+| `l` / `→` | Next track                  |
+| `+` / `-` | Volume up / down            |
+| `m`       | Mute / unmute               |
+
+Other:
+
+| Key   | Action                        |
+| ----- | ----------------------------- |
+| `/`   | Enter slash command mode      |
+| `Esc` | Return to Playlist            |
+| `H`   | Show Settings shortcuts popup |
+| `q`   | Quit                          |
+
+### Help
+
+| Key       | Action      |
+| --------- | ----------- |
+| `j` / `↓` | Scroll down |
+| `k` / `↑` | Scroll up   |
+| `PgDn`    | Page down   |
+| `PgUp`    | Page up     |
+
+Other:
+
+| Key         | Action                    |
+| ----------- | ------------------------- |
+| `/`         | Enter slash command mode  |
+| `Esc` / `?` | Close help                |
+| `H`         | Show Help shortcuts popup |
+| `q`         | Quit                      |
 
 ## Views
 
@@ -256,13 +365,6 @@ cargo build --release
 
 ```bash
 cargo build --release --target x86_64-pc-windows-gnu
-```
-
-### Docker Build
-
-```bash
-docker-compose up build-all
-# Outputs to ./dist/
 ```
 
 ## License
