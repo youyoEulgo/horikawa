@@ -1,0 +1,48 @@
+[package]
+name = "horikawa-cli"
+description = "Terminal UI for Horikawa music player"
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "horikawa"
+path = "src/main.rs"
+
+[dependencies]
+horikawa-core.workspace = true
+horikawa-protocol.workspace = true
+horikawa-ctl.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+dirs.workspace = true
+discord-rich-presence = "1.0"
+serde = { version = "1.0", features = [ "derive" ] }
+serde_json = "1.0"
+
+[target.'cfg(any(target_os = "windows", target_os = "macos", all(unix, not(target_os = "macos"))))'.dependencies]
+souvlaki = "0.7"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.9"
+objc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_System_Console",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_FileSystem",
+] }
+
+[build-dependencies]
+winres = "0.1"

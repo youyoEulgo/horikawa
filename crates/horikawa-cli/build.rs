@@ -1,0 +1,22 @@
+fn main() {
+    // Check TARGET (what we're compiling for), not HOST (where we're compiling)
+    let target = std::env::var( "CARGO_CFG_TARGET_OS" ).unwrap_or_default();
+    if target == "windows" {
+        let mut res = winres::WindowsResource::new();
+
+        // For cross-compilation from Linux, use the mingw windres
+        if std::env::var( "CARGO_CFG_TARGET_ARCH" ).unwrap_or_default() == "x86_64" {
+            res.set_windres_path( "x86_64-w64-mingw32-windres" );
+        }
+
+        // Get version from Cargo.toml
+        let version = std::env::var( "CARGO_PKG_VERSION" ).unwrap_or_else( |_| "0.0.0".to_string() );
+
+        res.set( "ProductName", "Horikawa" );
+        res.set( "FileDescription", "Horikawa" );
+        res.set( "OriginalFilename", "horikawa.exe" );
+        res.set( "ProductVersion", &version );
+        res.set( "FileVersion", &version );
+        res.compile().expect( "Failed to compile Windows resources" );
+    }
+}

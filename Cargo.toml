@@ -1,26 +1,23 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/oxidio-core",
-    "crates/oxidio-protocol",
-    "crates/oxidio-ctl",
-    "crates/oxidio-web",
-    "crates/oxidio-cli",
+    "crates/horikawa-core",
+    "crates/horikawa-protocol",
+    "crates/horikawa-ctl",
+    "crates/horikawa-cli",
 ]
 
 [workspace.package]
-version = "1.1.0-RC.2"
+version = "0.1.0"
 edition = "2021"
 license = "MIT"
-authors = ["Nathan Baker"]
+authors = ["youyoEulgo"]
 
 [workspace.dependencies]
 # Audio
 symphonia = { version = "0.5", features = ["all"] }
 cpal = "0.15"
 rubato = "0.16"
-
-# Media controls (platform-specific, defined in oxidio-cli)
 
 # Async
 tokio = { version = "1", features = ["full"] }
@@ -36,17 +33,9 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 clap = { version = "4", features = ["derive"] }
 dirs = "5"
-
-# Web
-axum = { version = "0.8", features = ["ws"] }
-tower-http = { version = "0.6", features = ["cors"] }
-rust-embed = "8"
-mime_guess = "2"
-futures-util = "0.3"
 serde_json = "1.0"
 
 # Internal
-oxidio-core = { path = "crates/oxidio-core", version = "1.1.0-RC.2" }
-oxidio-protocol = { path = "crates/oxidio-protocol", version = "1.1.0-RC.2" }
-oxidio-ctl = { path = "crates/oxidio-ctl", version = "1.1.0-RC.2" }
-oxidio-web = { path = "crates/oxidio-web", version = "1.1.0-RC.2" }
+horikawa-core = { path = "crates/horikawa-core", version = "0.1.0" }
+horikawa-protocol = { path = "crates/horikawa-protocol", version = "0.1.0" }
+horikawa-ctl = { path = "crates/horikawa-ctl", version = "0.1.0" }
