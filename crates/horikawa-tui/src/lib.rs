@@ -520,6 +520,10 @@ impl App {
     fn handle_normal_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         // Global keys (work in any view)
         match code {
+            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                self.should_quit = true;
+                return;
+            }
             KeyCode::Char('/') => {
                 self.input_mode = InputMode::Command;
                 self.input_buffer.clear();

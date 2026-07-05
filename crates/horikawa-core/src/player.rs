@@ -3,73 +3,77 @@
 //! The Player struct orchestrates decoding, output, and playback control.
 
 use std::path::PathBuf;
-use std::sync::{ Arc, RwLock };
-use std::sync::atomic::{ AtomicBool, AtomicU64, Ordering };
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use rubato::{ FastFixedOut, PolynomialDegree, Resampler };
+use rubato::{FastFixedOut, PolynomialDegree, Resampler};
 use thiserror::Error;
 
-use crate::decoder::{ AudioMetadata, Decoder };
-use crate::output::{ AudioOutput, SampleBuffer };
+use crate::decoder::{AudioMetadata, Decoder};
+use crate::output::{AudioOutput, SampleBuffer};
 use crate::playlist::Playlist;
-
 
 /// Converts planar samples back to interleaved format.
 /// [[L0, L1, ...], [R0, R1, ...]] → [L0, R0, L1, R1, ...]
-fn interleave( channels: &[Vec<f32>] ) -> Vec<f32> {
-    if channels.is_empty() || channels[ 0 ].is_empty() {
+fn interleave(channels: &[Vec<f32>]) -> Vec<f32> {
+    if channels.is_empty() || channels[0].is_empty() {
         return Vec::new();
     }
-    let frames = channels[ 0 ].len();
+    let frames = channels[0].len();
     let num_ch = channels.len();
-    let mut out = Vec::with_capacity( frames * num_ch );
+    let mut out = Vec::with_capacity(frames * num_ch);
     for f in 0..frames {
         for ch in channels {
-            out.push( ch[ f ] );
+            out.push(ch[f]);
         }
     }
     out
 }
 
-
 /// Errors that can occur during playback.
-#[derive( Debug, Error )]
+#[derive(Debug, Error)]
 pub enum PlayerError {
-    #[error( "Failed to open file: {0}" )]
-    FileOpen( String ),
+    #[error("Failed to open file: {0}")]
+    FileOpen(String),
 
-    #[error( "Decode error: {0}" )]
-    Decode( String ),
+    #[error("Decode error: {0}")]
+    Decode(String),
 
-    #[error( "Audio output error: {0}" )]
-    Output( String ),
+    #[error("Audio output error: {0}")]
+    Output(String),
 
-    #[error( "No track loaded" )]
+    #[error("No track loaded")]
     NoTrack,
 }
 
-
 /// Current playback state.
-#[derive( Debug, Clone, Copy, PartialEq, Eq )]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlaybackState {
     Stopped,
     Playing,
     Paused,
 }
 
-
 /// Events emitted by the player for UI updates.
-#[derive( Debug, Clone )]
+#[derive(Debug, Clone)]
 pub enum PlayerEvent {
-    TrackChanged { path: PathBuf },
-    StateChanged { state: PlaybackState },
-    PositionChanged { position: Duration, duration: Duration },
+    TrackChanged {
+        path: PathBuf,
+    },
+    StateChanged {
+        state: PlaybackState,
+    },
+    PositionChanged {
+        position: Duration,
+        duration: Duration,
+    },
     TrackEnded,
-    Error { message: String },
+    Error {
+        message: String,
+    },
 }
-
 
 /// Newtype wrapper to keep the cpal stream alive.
 ///
@@ -88,12 +92,11 @@ struct AudioOutputHandle(AudioOutput);
 unsafe impl Send for AudioOutputHandle {}
 unsafe impl Sync for AudioOutputHandle {}
 
-
 /// Shared playback state between main thread and decode thread.
 struct PlaybackHandle {
     stop_flag: Arc<AtomicBool>,
     sample_buffer: Arc<SampleBuffer>,
-    #[allow( dead_code )] // Kept alive for its Drop impl which stops the audio stream
+    #[allow(dead_code)] // Kept alive for its Drop impl which stops the audio stream
     output: AudioOutputHandle,
     thread: Option<thread::JoinHandle<()>>,
     /// Number of frames (samples / channels) decoded so far
@@ -108,7 +111,6 @@ struct PlaybackHandle {
     metadata: AudioMetadata,
 }
 
-
 /// Core audio player.
 pub struct Player {
     state: Arc<RwLock<PlaybackState>>,
@@ -119,47 +121,46 @@ pub struct Player {
     volume: Arc<RwLock<f32>>,
 }
 
-
 impl Player {
     /// Creates a new Player instance.
     pub fn new() -> Result<Self, PlayerError> {
-        Ok( Self {
-            state: Arc::new( RwLock::new( PlaybackState::Stopped ) ),
-            current_track: Arc::new( RwLock::new( None ) ),
-            playlist: Arc::new( RwLock::new( Playlist::new() ) ),
-            playback: Arc::new( RwLock::new( None ) ),
-            volume: Arc::new( RwLock::new( 1.0 ) ),
+        Ok(Self {
+            state: Arc::new(RwLock::new(PlaybackState::Stopped)),
+            current_track: Arc::new(RwLock::new(None)),
+            playlist: Arc::new(RwLock::new(Playlist::new())),
+            playback: Arc::new(RwLock::new(None)),
+            volume: Arc::new(RwLock::new(1.0)),
         })
     }
 
-
     /// Starts playback of the specified file.
-    pub fn play( &self, path: PathBuf ) -> Result<(), PlayerError> {
+    pub fn play(&self, path: PathBuf) -> Result<(), PlayerError> {
         // Stop any current playback
         self.stop()?;
 
-        tracing::info!( "Playing: {:?}", path );
+        tracing::info!("Playing: {:?}", path);
 
         // Open the decoder
-        let mut decoder = Decoder::open( &path )
-            .map_err( |e| PlayerError::FileOpen( e.to_string() ) )?;
+        let mut decoder = Decoder::open(&path).map_err(|e| PlayerError::FileOpen(e.to_string()))?;
 
         let source_sample_rate = decoder.sample_rate();
         let channels = decoder.channels() as u16;
-        let duration = decoder.duration().map( |secs| Duration::from_secs_f64( secs ) );
+        let duration = decoder.duration().map(|secs| Duration::from_secs_f64(secs));
         let metadata = decoder.metadata();
 
         // Create audio output - this also creates the sample buffer with proper channel config
-        let ( output, sample_buffer ) = AudioOutput::new( source_sample_rate, channels )
-            .map_err( |e| PlayerError::Output( e.to_string() ) )?;
+        let (output, sample_buffer) = AudioOutput::new(source_sample_rate, channels)
+            .map_err(|e| PlayerError::Output(e.to_string()))?;
 
         // Apply stored volume to new sample buffer
         let vol = *self.volume.read().unwrap();
-        sample_buffer.set_volume( vol );
+        sample_buffer.set_volume(vol);
 
         let target_sample_rate = output.sample_rate();
 
-        output.play().map_err( |e| PlayerError::Output( e.to_string() ) )?;
+        output
+            .play()
+            .map_err(|e| PlayerError::Output(e.to_string()))?;
 
         // Create resampler if sample rates don't match
         let resampler = if source_sample_rate != target_sample_rate {
@@ -172,31 +173,32 @@ impl Player {
             // Use FastFixedOut which handles variable input sizes
             let resampler = FastFixedOut::<f32>::new(
                 target_sample_rate as f64 / source_sample_rate as f64,
-                2.0,  // max relative input/output size ratio
+                2.0, // max relative input/output size ratio
                 PolynomialDegree::Cubic,
                 1024, // output chunk size
                 channels as usize,
-            ).map_err( |e| PlayerError::Output( format!( "Failed to create resampler: {}", e ) ) )?;
+            )
+            .map_err(|e| PlayerError::Output(format!("Failed to create resampler: {}", e)))?;
 
-            Some( resampler )
+            Some(resampler)
         } else {
             None
         };
 
         // Set up control flags and position tracking
-        let stop_flag = Arc::new( AtomicBool::new( false ) );
-        let frames_played = Arc::new( AtomicU64::new( 0 ) );
-        let track_ended = Arc::new( AtomicBool::new( false ) );
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let frames_played = Arc::new(AtomicU64::new(0));
+        let track_ended = Arc::new(AtomicBool::new(false));
 
         // Clone for the decode thread
-        let stop_flag_clone = Arc::clone( &stop_flag );
-        let sample_buffer_clone = Arc::clone( &sample_buffer );
-        let state_clone = Arc::clone( &self.state );
-        let frames_played_clone = Arc::clone( &frames_played );
-        let track_ended_clone = Arc::clone( &track_ended );
+        let stop_flag_clone = Arc::clone(&stop_flag);
+        let sample_buffer_clone = Arc::clone(&sample_buffer);
+        let state_clone = Arc::clone(&self.state);
+        let frames_played_clone = Arc::clone(&frames_played);
+        let track_ended_clone = Arc::clone(&track_ended);
 
         // Spawn decode thread
-        let thread = thread::spawn( move || {
+        let thread = thread::spawn(move || {
             Self::decode_loop(
                 decoder,
                 sample_buffer_clone,
@@ -211,11 +213,11 @@ impl Player {
         // Store playback handle
         {
             let mut playback = self.playback.write().unwrap();
-            *playback = Some( PlaybackHandle {
+            *playback = Some(PlaybackHandle {
                 stop_flag,
                 sample_buffer,
-                output: AudioOutputHandle( output ),
-                thread: Some( thread ),
+                output: AudioOutputHandle(output),
+                thread: Some(thread),
                 frames_played,
                 sample_rate: source_sample_rate,
                 duration,
@@ -227,7 +229,7 @@ impl Player {
         // Update state
         {
             let mut track = self.current_track.write().unwrap();
-            *track = Some( path );
+            *track = Some(path);
         }
 
         {
@@ -237,7 +239,6 @@ impl Player {
 
         Ok(())
     }
-
 
     /// The decode loop that runs in a separate thread.
     fn decode_loop(
@@ -252,69 +253,69 @@ impl Player {
         let channels = decoder.channels();
 
         // Input buffer for resampler (stores planar samples per channel)
-        let mut resample_input: Vec<Vec<f32>> = ( 0..channels ).map( |_| Vec::new() ).collect();
+        let mut resample_input: Vec<Vec<f32>> = (0..channels).map(|_| Vec::new()).collect();
 
         loop {
             // Check for stop signal
-            if stop_flag.load( Ordering::Relaxed ) {
-                tracing::debug!( "Decode loop: stop signal received" );
+            if stop_flag.load(Ordering::Relaxed) {
+                tracing::debug!("Decode loop: stop signal received");
                 break;
             }
 
             // Check for pause signal - if paused, just sleep
             if sample_buffer.is_paused() {
-                thread::sleep( Duration::from_millis( 10 ) );
+                thread::sleep(Duration::from_millis(10));
                 continue;
             }
 
             // Check if output buffer has room
             // Don't decode too far ahead - keep about 50ms buffered
-            let target_buffer = ( decoder.sample_rate() as usize * channels ) / 20;
+            let target_buffer = (decoder.sample_rate() as usize * channels) / 20;
             if sample_buffer.len() > target_buffer {
-                thread::sleep( Duration::from_millis( 5 ) );
+                thread::sleep(Duration::from_millis(5));
                 continue;
             }
 
             // Decode next chunk
             match decoder.decode_next() {
-                Ok( Some( samples ) ) => {
+                Ok(Some(samples)) => {
                     // Track position based on source frames (before resampling)
                     let source_frames = samples.len() / channels;
-                    frames_played.fetch_add( source_frames as u64, Ordering::Relaxed );
+                    frames_played.fetch_add(source_frames as u64, Ordering::Relaxed);
 
                     // Apply resampling if needed
-                    let output_samples = if let Some( ref mut resampler ) = resampler {
+                    let output_samples = if let Some(ref mut resampler) = resampler {
                         // Add new samples to input buffer (convert interleaved to planar)
-                        for chunk in samples.chunks( channels ) {
-                            for ( ch_idx, sample ) in chunk.iter().enumerate() {
+                        for chunk in samples.chunks(channels) {
+                            for (ch_idx, sample) in chunk.iter().enumerate() {
                                 if ch_idx < resample_input.len() {
-                                    resample_input[ ch_idx ].push( *sample );
+                                    resample_input[ch_idx].push(*sample);
                                 }
                             }
                         }
 
                         // Process when we have enough input frames
                         let mut output_interleaved = Vec::new();
-                        while resample_input[ 0 ].len() >= resampler.input_frames_next() {
+                        while resample_input[0].len() >= resampler.input_frames_next() {
                             let needed = resampler.input_frames_next();
 
                             // Extract needed frames from input buffer
                             let input_chunk: Vec<Vec<f32>> = resample_input
                                 .iter_mut()
-                                .map( |ch| ch.drain( ..needed ).collect() )
+                                .map(|ch| ch.drain(..needed).collect())
                                 .collect();
 
                             // Resample
-                            match resampler.process( &input_chunk, None ) {
-                                Ok( resampled ) => {
-                                    output_interleaved.extend( interleave( &resampled ) );
+                            match resampler.process(&input_chunk, None) {
+                                Ok(resampled) => {
+                                    output_interleaved.extend(interleave(&resampled));
                                 }
-                                Err( e ) => {
-                                    tracing::error!( "Resample error: {}", e );
+                                Err(e) => {
+                                    tracing::error!("Resample error: {}", e);
                                     // Put samples back on error
-                                    for ( ch_idx, samples ) in input_chunk.into_iter().enumerate() {
+                                    for (ch_idx, samples) in input_chunk.into_iter().enumerate() {
                                         for sample in samples.into_iter().rev() {
-                                            resample_input[ ch_idx ].insert( 0, sample );
+                                            resample_input[ch_idx].insert(0, sample);
                                         }
                                     }
                                     break;
@@ -330,45 +331,48 @@ impl Player {
                     // Push samples to buffer
                     if !output_samples.is_empty() {
                         let mut offset = 0;
-                        while offset < output_samples.len() && !stop_flag.load( Ordering::Relaxed ) {
-                            let pushed = sample_buffer.push( &output_samples[ offset.. ] );
+                        while offset < output_samples.len() && !stop_flag.load(Ordering::Relaxed) {
+                            let pushed = sample_buffer.push(&output_samples[offset..]);
                             offset += pushed;
                             if pushed == 0 {
                                 // Buffer full, wait a bit
-                                thread::sleep( Duration::from_millis( 5 ) );
+                                thread::sleep(Duration::from_millis(5));
                             }
                         }
                     }
                 }
-                Ok( None ) => {
+                Ok(None) => {
                     // EOF - flush any remaining samples in resample buffer
-                    if let Some( ref mut resampler ) = resampler {
-                        if !resample_input[ 0 ].is_empty() {
+                    if let Some(ref mut resampler) = resampler {
+                        if !resample_input[0].is_empty() {
                             // Use process_partial for remaining samples
-                            match resampler.process_partial( Some( &resample_input ), None ) {
-                                Ok( resampled ) => {
-                                    let output_interleaved = interleave( &resampled );
+                            match resampler.process_partial(Some(&resample_input), None) {
+                                Ok(resampled) => {
+                                    let output_interleaved = interleave(&resampled);
                                     let mut offset = 0;
-                                    while offset < output_interleaved.len() && !stop_flag.load( Ordering::Relaxed ) {
-                                        let pushed = sample_buffer.push( &output_interleaved[ offset.. ] );
+                                    while offset < output_interleaved.len()
+                                        && !stop_flag.load(Ordering::Relaxed)
+                                    {
+                                        let pushed =
+                                            sample_buffer.push(&output_interleaved[offset..]);
                                         offset += pushed;
                                         if pushed == 0 {
-                                            thread::sleep( Duration::from_millis( 5 ) );
+                                            thread::sleep(Duration::from_millis(5));
                                         }
                                     }
                                 }
-                                Err( e ) => tracing::error!( "Final resample error: {}", e ),
+                                Err(e) => tracing::error!("Final resample error: {}", e),
                             }
                         }
                     }
 
                     // Wait for buffer to drain, then signal end
-                    tracing::info!( "Decode loop: reached end of file" );
-                    while !sample_buffer.is_empty() && !stop_flag.load( Ordering::Relaxed ) {
-                        thread::sleep( Duration::from_millis( 10 ) );
+                    tracing::info!("Decode loop: reached end of file");
+                    while !sample_buffer.is_empty() && !stop_flag.load(Ordering::Relaxed) {
+                        thread::sleep(Duration::from_millis(10));
                     }
                     // Signal that track ended naturally (not stopped by user)
-                    track_ended.store( true, Ordering::Relaxed );
+                    track_ended.store(true, Ordering::Relaxed);
                     // Update state to stopped
                     {
                         let mut s = state.write().unwrap();
@@ -376,61 +380,58 @@ impl Player {
                     }
                     break;
                 }
-                Err( e ) => {
-                    tracing::error!( "Decode error: {}", e );
+                Err(e) => {
+                    tracing::error!("Decode error: {}", e);
                     break;
                 }
             }
         }
 
-        tracing::debug!( "Decode loop: exiting" );
+        tracing::debug!("Decode loop: exiting");
     }
 
-
     /// Pauses playback.
-    pub fn pause( &self ) -> Result<(), PlayerError> {
+    pub fn pause(&self) -> Result<(), PlayerError> {
         let playback = self.playback.read().unwrap();
-        if let Some( ref handle ) = *playback {
-            handle.sample_buffer.set_paused( true );
+        if let Some(ref handle) = *playback {
+            handle.sample_buffer.set_paused(true);
 
             let mut state = self.state.write().unwrap();
             *state = PlaybackState::Paused;
-            tracing::info!( "Paused" );
+            tracing::info!("Paused");
         }
         Ok(())
     }
 
-
     /// Resumes playback.
-    pub fn resume( &self ) -> Result<(), PlayerError> {
+    pub fn resume(&self) -> Result<(), PlayerError> {
         let playback = self.playback.read().unwrap();
-        if let Some( ref handle ) = *playback {
-            handle.sample_buffer.set_paused( false );
+        if let Some(ref handle) = *playback {
+            handle.sample_buffer.set_paused(false);
 
             let mut state = self.state.write().unwrap();
             *state = PlaybackState::Playing;
-            tracing::info!( "Resumed" );
+            tracing::info!("Resumed");
         }
         Ok(())
     }
 
-
     /// Stops playback.
-    pub fn stop( &self ) -> Result<(), PlayerError> {
+    pub fn stop(&self) -> Result<(), PlayerError> {
         let mut playback = self.playback.write().unwrap();
 
-        if let Some( mut handle ) = playback.take() {
+        if let Some(mut handle) = playback.take() {
             // Signal stop
-            handle.stop_flag.store( true, Ordering::Relaxed );
+            handle.stop_flag.store(true, Ordering::Relaxed);
             handle.sample_buffer.clear();
 
             // Wait for thread to finish
-            if let Some( thread ) = handle.thread.take() {
+            if let Some(thread) = handle.thread.take() {
                 let _ = thread.join();
             }
 
             // AudioOutput is dropped here, which stops the cpal stream
-            tracing::info!( "Stopped" );
+            tracing::info!("Stopped");
         }
 
         // Update state
@@ -447,68 +448,59 @@ impl Player {
         Ok(())
     }
 
-
     /// Gets the current playback state.
-    pub fn state( &self ) -> PlaybackState {
+    pub fn state(&self) -> PlaybackState {
         *self.state.read().unwrap()
     }
 
-
     /// Gets the current track path, if any.
-    pub fn current_track( &self ) -> Option<PathBuf> {
+    pub fn current_track(&self) -> Option<PathBuf> {
         self.current_track.read().unwrap().clone()
     }
 
-
     /// Gets a reference to the playlist.
-    pub fn playlist( &self ) -> Arc<RwLock<Playlist>> {
-        Arc::clone( &self.playlist )
+    pub fn playlist(&self) -> Arc<RwLock<Playlist>> {
+        Arc::clone(&self.playlist)
     }
 
-
     /// Gets the current playback position.
-    pub fn position( &self ) -> Duration {
+    pub fn position(&self) -> Duration {
         let playback = self.playback.read().unwrap();
-        if let Some( ref handle ) = *playback {
-            let frames = handle.frames_played.load( Ordering::Relaxed );
+        if let Some(ref handle) = *playback {
+            let frames = handle.frames_played.load(Ordering::Relaxed);
             let seconds = frames as f64 / handle.sample_rate as f64;
-            Duration::from_secs_f64( seconds )
+            Duration::from_secs_f64(seconds)
         } else {
             Duration::ZERO
         }
     }
 
-
     /// Gets the total duration of the current track.
-    pub fn duration( &self ) -> Option<Duration> {
+    pub fn duration(&self) -> Option<Duration> {
         let playback = self.playback.read().unwrap();
-        playback.as_ref().and_then( |h| h.duration )
+        playback.as_ref().and_then(|h| h.duration)
     }
-
 
     /// Gets the metadata of the current track.
-    pub fn metadata( &self ) -> Option<AudioMetadata> {
+    pub fn metadata(&self) -> Option<AudioMetadata> {
         let playback = self.playback.read().unwrap();
-        playback.as_ref().map( |h| h.metadata.clone() )
+        playback.as_ref().map(|h| h.metadata.clone())
     }
-
 
     /// Gets the visualization data (RMS amplitudes for frequency bars).
-    pub fn vis_data( &self ) -> Option<[f32; crate::output::VIS_BARS]> {
+    pub fn vis_data(&self) -> Option<[f32; crate::output::VIS_BARS]> {
         let playback = self.playback.read().unwrap();
-        playback.as_ref().map( |h| h.sample_buffer.vis_data() )
+        playback.as_ref().map(|h| h.sample_buffer.vis_data())
     }
-
 
     /// Gets legacy volume-meter style visualization data.
-    pub fn vis_rms( &self ) -> Option<[f32; crate::output::VIS_BARS]> {
+    pub fn vis_rms(&self) -> Option<[f32; crate::output::VIS_BARS]> {
         let playback = self.playback.read().unwrap();
-        playback.as_ref().map( |h| h.sample_buffer.vis_rms() )
+        playback.as_ref().map(|h| h.sample_buffer.vis_rms())
     }
 
-
     /// Sets the volume level (0.0 = mute, 1.0 = normal, >1.0 = boost).
-    pub fn set_volume( &self, volume: f32 ) {
+    pub fn set_volume(&self, volume: f32) {
         // Store volume for future tracks
         {
             let mut vol = self.volume.write().unwrap();
@@ -516,100 +508,99 @@ impl Player {
         }
         // Apply to current playback if any
         let playback = self.playback.read().unwrap();
-        if let Some( ref handle ) = *playback {
-            handle.sample_buffer.set_volume( volume );
+        if let Some(ref handle) = *playback {
+            handle.sample_buffer.set_volume(volume);
         }
     }
 
-
     /// Gets the current volume level.
-    pub fn volume( &self ) -> f32 {
+    pub fn volume(&self) -> f32 {
         *self.volume.read().unwrap()
     }
 
-
     /// Returns true if the current track ended naturally (EOF reached).
     /// This is reset when a new track starts playing.
-    pub fn track_ended( &self ) -> bool {
+    pub fn track_ended(&self) -> bool {
         let playback = self.playback.read().unwrap();
-        playback.as_ref()
-            .map( |h| h.track_ended.load( Ordering::Relaxed ) )
-            .unwrap_or( false )
+        playback
+            .as_ref()
+            .map(|h| h.track_ended.load(Ordering::Relaxed))
+            .unwrap_or(false)
     }
-
 
     /// Plays the next track in the playlist.
     /// Returns Ok(true) if a track was started, Ok(false) if no next track.
-    pub fn play_next( &self ) -> Result<bool, PlayerError> {
+    pub fn play_next(&self) -> Result<bool, PlayerError> {
         let next_track = {
             let mut playlist = self.playlist.write().unwrap();
             playlist.next().cloned()
         };
 
-        if let Some( path ) = next_track {
-            self.play( path )?;
-            Ok( true )
+        if let Some(path) = next_track {
+            self.play(path)?;
+            Ok(true)
         } else {
-            Ok( false )
+            Ok(false)
         }
     }
 
-
     /// Plays the previous track in the playlist.
     /// Returns Ok(true) if a track was started, Ok(false) if no previous track.
-    pub fn play_previous( &self ) -> Result<bool, PlayerError> {
+    pub fn play_previous(&self) -> Result<bool, PlayerError> {
         let prev_track = {
             let mut playlist = self.playlist.write().unwrap();
             playlist.previous().cloned()
         };
 
-        if let Some( path ) = prev_track {
-            self.play( path )?;
-            Ok( true )
+        if let Some(path) = prev_track {
+            self.play(path)?;
+            Ok(true)
         } else {
-            Ok( false )
+            Ok(false)
         }
     }
-
 
     /// Seeks to a specific position in the current track.
     ///
     /// This works by stopping playback, reopening the file at the seek position,
     /// and resuming playback.
-    pub fn seek( &self, position: Duration ) -> Result<(), PlayerError> {
-        let current_track = self.current_track().ok_or( PlayerError::NoTrack )?;
+    pub fn seek(&self, position: Duration) -> Result<(), PlayerError> {
+        let current_track = self.current_track().ok_or(PlayerError::NoTrack)?;
         let was_playing = self.state() == PlaybackState::Playing;
 
         // Stop current playback
         self.stop()?;
 
         // Reopen and seek
-        tracing::info!( "Seeking to {:?} in {:?}", position, current_track );
+        tracing::info!("Seeking to {:?} in {:?}", position, current_track);
 
         // Open the decoder
-        let mut decoder = Decoder::open( &current_track )
-            .map_err( |e| PlayerError::FileOpen( e.to_string() ) )?;
+        let mut decoder =
+            Decoder::open(&current_track).map_err(|e| PlayerError::FileOpen(e.to_string()))?;
 
         // Seek to position
-        decoder.seek( position.as_secs_f64() )
-            .map_err( |e| PlayerError::Decode( e.to_string() ) )?;
+        decoder
+            .seek(position.as_secs_f64())
+            .map_err(|e| PlayerError::Decode(e.to_string()))?;
 
         let source_sample_rate = decoder.sample_rate();
         let channels = decoder.channels() as u16;
-        let duration = decoder.duration().map( |secs| Duration::from_secs_f64( secs ) );
+        let duration = decoder.duration().map(|secs| Duration::from_secs_f64(secs));
         let metadata = decoder.metadata();
 
         // Create audio output
-        let ( output, sample_buffer ) = AudioOutput::new( source_sample_rate, channels )
-            .map_err( |e| PlayerError::Output( e.to_string() ) )?;
+        let (output, sample_buffer) = AudioOutput::new(source_sample_rate, channels)
+            .map_err(|e| PlayerError::Output(e.to_string()))?;
 
         // Apply stored volume to new sample buffer
         let vol = *self.volume.read().unwrap();
-        sample_buffer.set_volume( vol );
+        sample_buffer.set_volume(vol);
 
         let target_sample_rate = output.sample_rate();
 
-        output.play().map_err( |e| PlayerError::Output( e.to_string() ) )?;
+        output
+            .play()
+            .map_err(|e| PlayerError::Output(e.to_string()))?;
 
         // Create resampler if sample rates don't match
         let resampler = if source_sample_rate != target_sample_rate {
@@ -619,33 +610,34 @@ impl Player {
                 PolynomialDegree::Cubic,
                 1024,
                 channels as usize,
-            ).map_err( |e| PlayerError::Output( format!( "Failed to create resampler: {}", e ) ) )?;
+            )
+            .map_err(|e| PlayerError::Output(format!("Failed to create resampler: {}", e)))?;
 
-            Some( resampler )
+            Some(resampler)
         } else {
             None
         };
 
         // Set up control flags - start with frames_played at the seek position
-        let stop_flag = Arc::new( AtomicBool::new( false ) );
-        let seek_frames = ( position.as_secs_f64() * source_sample_rate as f64 ) as u64;
-        let frames_played = Arc::new( AtomicU64::new( seek_frames ) );
-        let track_ended = Arc::new( AtomicBool::new( false ) );
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let seek_frames = (position.as_secs_f64() * source_sample_rate as f64) as u64;
+        let frames_played = Arc::new(AtomicU64::new(seek_frames));
+        let track_ended = Arc::new(AtomicBool::new(false));
 
         // Clone for the decode thread
-        let stop_flag_clone = Arc::clone( &stop_flag );
-        let sample_buffer_clone = Arc::clone( &sample_buffer );
-        let state_clone = Arc::clone( &self.state );
-        let frames_played_clone = Arc::clone( &frames_played );
-        let track_ended_clone = Arc::clone( &track_ended );
+        let stop_flag_clone = Arc::clone(&stop_flag);
+        let sample_buffer_clone = Arc::clone(&sample_buffer);
+        let state_clone = Arc::clone(&self.state);
+        let frames_played_clone = Arc::clone(&frames_played);
+        let track_ended_clone = Arc::clone(&track_ended);
 
         // Start paused if we were paused before
         if !was_playing {
-            sample_buffer.set_paused( true );
+            sample_buffer.set_paused(true);
         }
 
         // Spawn decode thread
-        let thread = thread::spawn( move || {
+        let thread = thread::spawn(move || {
             Self::decode_loop(
                 decoder,
                 sample_buffer_clone,
@@ -660,11 +652,11 @@ impl Player {
         // Store playback handle
         {
             let mut playback = self.playback.write().unwrap();
-            *playback = Some( PlaybackHandle {
+            *playback = Some(PlaybackHandle {
                 stop_flag,
                 sample_buffer,
-                output: AudioOutputHandle( output ),
-                thread: Some( thread ),
+                output: AudioOutputHandle(output),
+                thread: Some(thread),
                 frames_played,
                 sample_rate: source_sample_rate,
                 duration,
@@ -676,28 +668,30 @@ impl Player {
         // Update state
         {
             let mut track = self.current_track.write().unwrap();
-            *track = Some( current_track );
+            *track = Some(current_track);
         }
 
         {
             let mut state = self.state.write().unwrap();
-            *state = if was_playing { PlaybackState::Playing } else { PlaybackState::Paused };
+            *state = if was_playing {
+                PlaybackState::Playing
+            } else {
+                PlaybackState::Paused
+            };
         }
 
         Ok(())
     }
 }
 
-
 impl Default for Player {
     fn default() -> Self {
-        Self::new().expect( "Failed to create player" )
+        Self::new().expect("Failed to create player")
     }
 }
 
-
 impl Drop for Player {
-    fn drop( &mut self ) {
+    fn drop(&mut self) {
         // Ensure playback is stopped when player is dropped
         let _ = self.stop();
     }
