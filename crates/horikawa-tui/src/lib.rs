@@ -2,11 +2,10 @@
 #![allow(unexpected_cfgs)]
 
 mod browser;
-mod cli;
 mod discord;
 mod input;
-mod integrations;
-mod media_controls;
+pub mod integrations;
+pub mod media_controls;
 mod popup;
 mod settings;
 mod view;
@@ -18,7 +17,6 @@ use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use anyhow::Result;
-use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -31,7 +29,6 @@ use ratatui::{
 };
 
 use browser::FileBrowser;
-use cli::Args;
 use input::{InputBuffer, InputMode};
 use view::{ViewMode, VisualizerStyle};
 
@@ -46,7 +43,7 @@ use horikawa_protocol::{AppCommand, StateUpdate};
 
 /// Entry type for the Playlists view.
 #[derive(Clone)]
-enum PlaylistEntry {
+pub enum PlaylistEntry {
     /// M3U playlist file (.m3u)
     M3u(String),
     /// Directory playlist file (.horikawa)
@@ -63,77 +60,77 @@ impl PlaylistEntry {
 }
 
 /// Application state.
-struct App {
-    player: Arc<Player>,
-    command_sender: CommandSender,
-    state_rx: tokio::sync::broadcast::Receiver<StateUpdate>,
-    should_quit: bool,
+pub struct App {
+    pub player: Arc<Player>,
+    pub command_sender: CommandSender,
+    pub state_rx: tokio::sync::broadcast::Receiver<StateUpdate>,
+    pub should_quit: bool,
 
     // View state
-    view_mode: ViewMode,
-    playlist_state: ListState,
-    browser: FileBrowser,
+    pub view_mode: ViewMode,
+    pub playlist_state: ListState,
+    pub browser: FileBrowser,
 
     // Input state
-    input_mode: InputMode,
-    input_buffer: InputBuffer,
-    command_ghost: Option<String>,
+    pub input_mode: InputMode,
+    pub input_buffer: InputBuffer,
+    pub command_ghost: Option<String>,
 
     // Edit mode
-    edit_mode: bool,
+    pub edit_mode: bool,
 
     // Visualizer style
-    visualizer_style: VisualizerStyle,
+    pub visualizer_style: VisualizerStyle,
 
     // Visualizer data source: true = FFT spectrum, false = RMS volume
-    spectrum_mode: bool,
+    pub spectrum_mode: bool,
 
     // Volume (0.0 to 1.5), synced from player via VolumeChanged
-    volume: f32,
+    pub volume: f32,
 
     // Flag to scroll to playing track without changing selection
-    scroll_to_playing: bool,
+    pub scroll_to_playing: bool,
 
     // Mouse click tracking for double-click detection
-    last_click_time: Option<std::time::Instant>,
-    last_click_row: Option<u16>,
+    pub last_click_time: Option<std::time::Instant>,
+    pub last_click_row: Option<u16>,
 
     // Store playlist area for mouse hit detection
-    playlist_area: Option<Rect>,
+    pub playlist_area: Option<Rect>,
 
     // Help view scroll offset
-    help_scroll: u16,
+    pub help_scroll: u16,
 
     // Track change detection (for auto-scroll on advance)
-    last_track: Option<PathBuf>,
+    pub last_track: Option<PathBuf>,
 
     // Status message (shown in status bar)
-    status_message: Option<String>,
-    status_clear_at: Option<std::time::Instant>,
+    pub status_message: Option<String>,
+    pub status_clear_at: Option<std::time::Instant>,
 
     // Settings
-    settings: settings::Settings,
-    settings_selected: usize,
+    pub settings: settings::Settings,
+    pub settings_selected: usize,
 
     // Playlists view state
-    playlist_entries: Vec<PlaylistEntry>,
-    playlist_list_selected: usize,
+    pub playlist_entries: Vec<PlaylistEntry>,
+    pub playlist_list_selected: usize,
 
     // Last loaded playlist (for quick reload)
-    last_loaded: Option<PlaylistEntry>,
+    pub last_loaded: Option<PlaylistEntry>,
 
     // Popup state (input or confirm dialog)
-    popup_state: Option<popup::PopupState>,
+    pub popup_state: Option<popup::PopupState>,
 
     // macOS media controls (must run on main thread)
     #[cfg(target_os = "macos")]
-    media_controls: Option<crate::media_controls::MediaControlsHandler>,
+    pub media_controls: Option<crate::media_controls::MediaControlsHandler>,
     #[cfg(target_os = "macos")]
-    smtc_rx: Option<mpsc::Receiver<crate::media_controls::MediaControlCommand>>,
+    pub smtc_rx: Option<mpsc::Receiver<crate::media_controls::MediaControlCommand>>,
     #[cfg(target_os = "macos")]
-    last_smtc_state: Option<PlaybackState>,
+    pub last_smtc_state: Option<PlaybackState>,
     #[cfg(target_os = "macos")]
-    last_smtc_track: Option<PathBuf>,
+    pub last_smtc_track: Option<PathBuf>,
 }
 
 impl App {
@@ -146,23 +143,20 @@ impl App {
     /// @param command_sender - Sender for the control channel
     /// @param state_rx - Broadcast receiver for state updates from the processor
     /// @param args - CLI arguments
-    fn new(
+    pub fn new(
         player: Arc<Player>,
         command_sender: CommandSender,
         state_rx: tokio::sync::broadcast::Receiver<StateUpdate>,
-        args: &Args,
+        start_path: Option<PathBuf>,
+        browse: bool,
     ) -> Result<Self> {
-        // Determine starting directory for browser
-        let start_path = args
-            .path
-            .clone()
-            .or_else(|| dirs::home_dir())
+        let start_path = start_path
+            .or_else(dirs::home_dir)
             .unwrap_or_else(|| PathBuf::from("."));
-
         let browser = FileBrowser::new(start_path)?;
 
         // Determine starting view
-        let view_mode = if args.browse {
+        let view_mode = if browse {
             ViewMode::Browser
         } else {
             ViewMode::Playlist
@@ -235,7 +229,7 @@ impl App {
     }
 
     /// Updates app state (clears expired messages, detects track changes, syncs settings).
-    fn tick(&mut self) {
+    pub fn tick(&mut self) {
         // Clear expired status messages
         if let Some(clear_at) = self.status_clear_at {
             if std::time::Instant::now() >= clear_at {
@@ -390,7 +384,7 @@ impl App {
     /// Stub for non-macOS platforms.
     #[cfg(not(target_os = "macos"))]
     fn tick_media_controls(&mut self) {}
-    fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+    pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         // Popup steals all input when active
         if let Some(mut popup) = self.popup_state.take() {
             // H closes informational popups
@@ -417,7 +411,7 @@ impl App {
     }
 
     /// Handles mouse events.
-    fn handle_mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
+    pub fn handle_mouse(&mut self, column: u16, row: u16, kind: MouseEventKind) {
         match kind {
             MouseEventKind::Down(crossterm::event::MouseButton::Left) => {
                 // Check if click is within the playlist area
@@ -1714,215 +1708,7 @@ impl App {
         }
     }
 }
-
-pub fn run() -> Result<()> {
-    let args = Args::parse();
-
-    // Create the shared player
-    let player = Arc::new(Player::new()?);
-
-    // Remember last_loaded for session restore so R key works after restart
-    let mut session_last_loaded: Option<PlaylistEntry> = None;
-
-    // Load initial playlist from CLI files or last session
-    if !args.files.is_empty() {
-        let playlist_arc = player.playlist();
-        let mut playlist = playlist_arc.write().unwrap();
-        for file in &args.files {
-            if file.is_dir() {
-                let mut scanner = LibraryScanner::new();
-                scanner.add_root(file.clone());
-                if let Ok(tracks) = scanner.scan() {
-                    playlist.add_many(tracks.into_iter().map(|t| t.path));
-                }
-            } else {
-                playlist.add(file.clone());
-            }
-        }
-    } else {
-        // Try to load last session
-        if let Some(session) = horikawa_core::Playlist::load_session() {
-            // Parse last_loaded from session so R key can reload after restart.
-            // Format: "m3u:<name>", "dirpl:<name>", or just "<name>" (legacy).
-            session_last_loaded = if let Some(name) = session.playlist_name.strip_prefix("m3u:") {
-                Some(PlaylistEntry::M3u(name.to_string()))
-            } else if let Some(name) = session.playlist_name.strip_prefix("dirpl:") {
-                Some(PlaylistEntry::DirPl(name.to_string()))
-            } else {
-                None
-            };
-
-            if let Some(dir) = horikawa_core::Playlist::playlist_dir() {
-                let path = dir.join("_last.m3u");
-                if let Ok(loaded) = horikawa_core::Playlist::load(&path) {
-                    let playlist_arc = player.playlist();
-                    let mut playlist = playlist_arc.write().unwrap();
-                    *playlist = loaded;
-                    playlist.set_shuffle(session.shuffle);
-                    playlist.set_repeat(session.repeat);
-                    if let Some(idx) = session.track_index {
-                        playlist.jump_to(idx);
-                    }
-                    player.set_volume(session.volume);
-                    tracing::info!(
-                        "Restored session: {}, track {}, shuffle={}, repeat={:?}, volume={}",
-                        session.playlist_name,
-                        session.track_index.unwrap_or(0),
-                        session.shuffle,
-                        session.repeat,
-                        session.volume
-                    );
-                }
-            }
-        }
-    }
-
-    // Determine starting directory for the processor's browser
-    let start_path = args
-        .path
-        .clone()
-        .or_else(|| dirs::home_dir())
-        .unwrap_or_else(|| PathBuf::from("."));
-
-    // Create control channel
-    let mut channel = ControlChannel::new();
-    let command_sender = channel.sender();
-    let command_rx = channel
-        .take_command_rx()
-        .expect("Command receiver already taken");
-    let broadcast_tx = channel.broadcast_tx();
-
-    // Load processor settings and create command processor
-    let proc_settings = ProcessorSettings::load();
-    let integrations_discord = proc_settings.discord_enabled;
-    #[cfg(not(target_os = "macos"))]
-    let integrations_smtc = proc_settings.smtc_enabled;
-    let processor_player = Arc::clone(&player);
-    let browse = args.browse;
-    let mut processor = CommandProcessor::new(
-        processor_player,
-        proc_settings,
-        start_path,
-        browse,
-        command_rx,
-        broadcast_tx,
-    );
-
-    // Spawn command processor on a background thread with its own tokio runtime
-    std::thread::Builder::new()
-        .name("horikawa-processor".to_string())
-        .spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create tokio runtime for command processor");
-            rt.block_on(processor.run());
-        })
-        .expect("Failed to spawn command processor thread");
-
-    // Spawn integrations worker (Discord Rich Presence + SMTC)
-    // Runs on its own thread so these work in both TUI and daemon modes
-    {
-        let integrations_player = Arc::clone(&player);
-        let integrations_sender = channel.sender();
-        let integrations_rx = channel.subscribe();
-        let integrations_settings = ProcessorSettings {
-            discord_enabled: integrations_discord,
-            // On macOS, SMTC is handled on the main thread (not in this worker)
-            #[cfg(target_os = "macos")]
-            smtc_enabled: false,
-            #[cfg(not(target_os = "macos"))]
-            smtc_enabled: integrations_smtc,
-            ..ProcessorSettings::default()
-        };
-        std::thread::Builder::new()
-            .name("horikawa-integrations".to_string())
-            .spawn(move || {
-                integrations::run_integrations(
-                    integrations_player,
-                    integrations_sender,
-                    integrations_rx,
-                    &integrations_settings,
-                );
-            })
-            .expect("Failed to spawn integrations thread");
-    }
-
-    // Branch: daemon mode (headless) vs TUI mode
-    if args.daemon {
-        tracing::info!("Running in daemon mode (headless). Press Ctrl+C to stop.");
-
-        // Block until the process is killed
-        // Future: this is where IPC socket listening for CLI oneshots will go
-        loop {
-            std::thread::sleep(Duration::from_secs(1));
-        }
-    }
-
-    // --- TUI mode ---
-
-    // Setup terminal
-    enable_raw_mode()?;
-    io::stdout().execute(EnterAlternateScreen)?;
-    io::stdout().execute(crossterm::event::EnableMouseCapture)?;
-
-    let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-
-    // Create TUI app (reads initial state from the shared player)
-    let state_rx = channel.subscribe();
-    let mut app = App::new(player, command_sender, state_rx, &args)?;
-    app.last_loaded = session_last_loaded;
-
-    // macOS: initialize Now Playing media controls on the main thread.
-    // This must happen here (not in a background thread) because
-    // MPNowPlayingInfoCenter and MPRemoteCommandCenter are main-thread-only.
-    #[cfg(target_os = "macos")]
-    {
-        let (smtc_tx, smtc_rx) = mpsc::channel();
-        app.media_controls = crate::media_controls::MediaControlsHandler::new(smtc_tx);
-        app.smtc_rx = Some(smtc_rx);
-    }
-
-    // Main loop
-    loop {
-        // Update state
-        app.tick();
-
-        // Draw UI
-        terminal.draw(|frame| draw_ui(frame, &mut app))?;
-
-        // Handle events with timeout
-        if event::poll(Duration::from_millis(33))? {
-            match event::read()? {
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    app.handle_key(key.code, key.modifiers);
-                }
-                Event::Mouse(mouse) => {
-                    app.handle_mouse(mouse.column, mouse.row, mouse.kind);
-                }
-                _ => {}
-            }
-        }
-
-        // macOS: pump CFRunLoop so MPNowPlayingInfoCenter XPC
-        // messages get delivered (1ms timeout, non-blocking).
-        crate::media_controls::pump_run_loop();
-
-        if app.should_quit {
-            break;
-        }
-    }
-
-    // Cleanup
-    io::stdout().execute(crossterm::event::DisableMouseCapture)?;
-    disable_raw_mode()?;
-    io::stdout().execute(LeaveAlternateScreen)?;
-
-    Ok(())
-}
-
-/// Draws the main UI.
-fn draw_ui(frame: &mut Frame, app: &mut App) {
+pub fn draw_ui(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
 
     // Create layout

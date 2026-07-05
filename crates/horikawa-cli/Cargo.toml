@@ -1,6 +1,6 @@
 [package]
 name = "horikawa-cli"
-description = "Horikawa music player binary"
+description = "Horikawa music player — entry point"
 readme = "../../README.md"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,16 @@ path = "src/main.rs"
 
 [dependencies]
 horikawa-tui.workspace = true
+horikawa-core.workspace = true
+horikawa-ctl.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+tokio.workspace = true
 anyhow.workspace = true
+clap.workspace = true
+dirs.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 [build-dependencies]
 winres = "0.1"
