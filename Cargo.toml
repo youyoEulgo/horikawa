@@ -5,6 +5,7 @@ members = [
     "crates/horikawa-protocol",
     "crates/horikawa-ctl",
     "crates/horikawa-cli",
+    "crates/horikawa-tui",
 ]
 
 [workspace.package]
@@ -39,3 +40,4 @@ serde_json = "1.0"
 horikawa-core = { path = "crates/horikawa-core", version = "0.1.0" }
 horikawa-protocol = { path = "crates/horikawa-protocol", version = "0.1.0" }
 horikawa-ctl = { path = "crates/horikawa-ctl", version = "0.1.0" }
+horikawa-tui = { path = "crates/horikawa-tui", version = "0.1.0" }

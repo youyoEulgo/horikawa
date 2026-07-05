@@ -676,23 +676,7 @@ name = "horikawa-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
- "core-foundation",
- "crossterm",
- "dirs",
- "discord-rich-presence",
- "horikawa-core",
- "horikawa-ctl",
- "horikawa-protocol",
- "objc",
- "ratatui",
- "serde",
- "serde_json",
- "souvlaki",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "windows 0.58.0",
+ "horikawa-tui",
  "winres",
 ]
 
@@ -731,6 +715,30 @@ name = "horikawa-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "horikawa-tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "core-foundation",
+ "crossterm",
+ "dirs",
+ "discord-rich-presence",
+ "horikawa-core",
+ "horikawa-ctl",
+ "horikawa-protocol",
+ "objc",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "souvlaki",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "windows 0.58.0",
 ]
 
 [[package]]
