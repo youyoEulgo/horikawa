@@ -13,7 +13,9 @@ mod view;
 mod views;
 
 use std::path::PathBuf;
-use std::sync::{mpsc, Arc};
+#[cfg(target_os = "macos")]
+use std::sync::mpsc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
