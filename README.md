@@ -4,6 +4,8 @@ A lightweight Terminal User Interface (TUI) music player written in Rust.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
+[中文文档](README.zh.md)
+
 ## Features
 
 - **Audio Playback** — Play, pause, seek, volume control, next/previous track
@@ -22,6 +24,14 @@ A lightweight Terminal User Interface (TUI) music player written in Rust.
   - Linux: MPRIS D-Bus (KDE/GNOME media controls)
   - Windows: System Media Transport Controls (lock screen, media keys)
   - Discord Rich Presence
+
+## Screenshots
+
+![Main interface](horikawa.png)
+
+![Visualizer](horikawa-visualizer.png)
+
+![Playlists](horikawa-playlists.png)
 
 ## Installation
 
@@ -55,6 +65,9 @@ horikawa track1.mp3 track2.flac
 
 # Play all audio in a directory
 horikawa /path/to/music/
+
+# Run as headless daemon (no TUI)
+horikawa --daemon
 ```
 
 ## Keyboard Shortcuts
@@ -294,12 +307,12 @@ Type `/` to enter command mode, then use any of these:
 
 ### Queue
 
-| Command             | Alias   | Action                      |
-| ------------------- | ------- | --------------------------- |
-| `/queue add <path>` | `/q a`  | Add file or folder to queue |
-| `/queue remove`     | `/q rm` | Remove selected track       |
-| `/queue clear`      | `/q cl` | Clear queue                 |
-| `/queue dedup`      | `/q`    | Remove duplicate tracks     |
+| Command             | Alias      | Action                      |
+| ------------------- | ---------- | --------------------------- |
+| `/queue add <path>` | `/q a`     | Add file or folder to queue |
+| `/queue remove`     | `/q rm`    | Remove selected track       |
+| `/queue clear`      | `/q cl`    | Clear queue                 |
+| `/queue dedup`      | `/q dedup` | Remove duplicate tracks     |
 
 ### Playlist
 
@@ -359,12 +372,6 @@ Playlists are stored at:
 
 ```bash
 cargo build --release
-```
-
-### Cross-Compile for Windows (from Linux)
-
-```bash
-cargo build --release --target x86_64-pc-windows-gnu
 ```
 
 ## License

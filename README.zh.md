@@ -25,6 +25,14 @@
   - Windows：系统媒体传输控制（锁屏、媒体键）
   - Discord Rich Presence
 
+## 截图
+
+![主界面](horikawa.png)
+
+![可视化](horikawa-visualizer.png)
+
+![歌单](horikawa-playlists.png)
+
 ## 安装
 
 ### 从源码编译
@@ -57,6 +65,9 @@ horikawa track1.mp3 track2.flac
 
 # 播放目录下所有音频
 horikawa /path/to/music/
+
+# 作为无界面守卫进程运行（不启动 TUI）
+horikawa --daemon
 ```
 
 ## 快捷键
@@ -301,7 +312,7 @@ horikawa /path/to/music/
 | `/queue add <路径>` | `/q a`  | 将文件或目录加入队列 |
 | `/queue remove`     | `/q rm` | 移除选中曲目         |
 | `/queue clear`      | `/q cl` | 清空队列             |
-| `/queue dedup`      | `/q`    | 移除重复曲目         |
+| `/queue dedup`      | `/q dedup` | 移除重复曲目         |
 
 ### 播放列表
 
@@ -361,12 +372,6 @@ horikawa /path/to/music/
 
 ```bash
 cargo build --release
-```
-
-### 交叉编译 Windows（从 Linux）
-
-```bash
-cargo build --release --target x86_64-pc-windows-gnu
 ```
 
 ## 许可证
