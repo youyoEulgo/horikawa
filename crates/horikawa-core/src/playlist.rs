@@ -372,7 +372,13 @@ impl Playlist {
         }
         #[cfg( not( target_os = "windows" ) )]
         {
-            dirs::data_local_dir().map( |d| d.join( "horikawa" ).join( "playlists" ) )
+            let dir = dirs::data_local_dir().map( |d| d.join( "horikawa" ).join( "playlists" ) );
+            if dir.is_none() {
+                tracing::warn!(
+                    "data_local_dir() returned None — $XDG_DATA_HOME or $HOME may be unset"
+                );
+            }
+            dir
         }
     }
 
@@ -380,7 +386,10 @@ impl Playlist {
     /// Ensures the playlist directory exists.
     pub fn ensure_playlist_dir() -> Option<PathBuf> {
         let dir = Self::playlist_dir()?;
-        fs::create_dir_all( &dir ).ok()?;
+        if let Err(e) = fs::create_dir_all( &dir ) {
+            tracing::warn!("Failed to create playlist dir {:?}: {e}", dir);
+            return None;
+        }
         Some( dir )
     }
 
@@ -393,21 +402,28 @@ impl Playlist {
 
     /// Saves session state (current playlist file, track index, shuffle, repeat, volume).
     pub fn save_session( state: &SessionState ) -> Result<(), PlaylistError> {
-        if let Some( session_path ) = Self::session_file() {
-            if let Some( parent ) = session_path.parent() {
-                fs::create_dir_all( parent )?;
+        let session_path = match Self::session_file() {
+            Some(p) => p,
+            None => {
+                tracing::warn!("session_file() returned None, cannot save session");
+                return Ok(());
             }
-            let mut file = File::create( session_path )?;
-            writeln!( file, "playlist={}", state.playlist_name )?;
-            writeln!( file, "track={}", state.track_index.map( |i| i.to_string() ).unwrap_or_default() )?;
-            writeln!( file, "shuffle={}", if state.shuffle { "1" } else { "0" } )?;
-            writeln!( file, "repeat={}", match state.repeat {
-                RepeatMode::Off => "off",
-                RepeatMode::One => "one",
-                RepeatMode::All => "all",
-            })?;
-            writeln!( file, "volume={}", ( state.volume * 100.0 ).round() as i32 )?;
+        };
+        if let Some( parent ) = session_path.parent() {
+            fs::create_dir_all( parent )?;
         }
+        let mut file = File::create( &session_path )
+            .inspect_err(|e| tracing::warn!("Failed to create session file {:?}: {e}", session_path))?;
+        writeln!( file, "playlist={}", state.playlist_name )?;
+        writeln!( file, "track={}", state.track_index.map( |i| i.to_string() ).unwrap_or_default() )?;
+        writeln!( file, "shuffle={}", if state.shuffle { "1" } else { "0" } )?;
+        writeln!( file, "repeat={}", match state.repeat {
+            RepeatMode::Off => "off",
+            RepeatMode::One => "one",
+            RepeatMode::All => "all",
+        })?;
+        writeln!( file, "volume={}", ( state.volume * 100.0 ).round() as i32 )?;
+        tracing::info!("Session saved to {:?}", session_path);
         Ok(())
     }
 

@@ -323,6 +323,7 @@ impl CommandProcessor {
             tokio::select! {
                 Some( cmd ) = self.command_rx.recv() => {
                     if matches!( cmd, AppCommand::Quit ) {
+                        tracing::info!("Quit command received, saving session...");
                         self.save_session();
                         break;
                     }
@@ -1032,12 +1033,15 @@ impl CommandProcessor {
         let playlist = playlist_arc.read().unwrap();
 
         if playlist.is_empty() {
+            tracing::info!("Not saving session: playlist is empty");
             return;
         }
 
         if let Some( dir ) = Playlist::ensure_playlist_dir() {
             let path = dir.join( "_last.m3u" );
-            let _ = playlist.save( &path );
+            if let Err(e) = playlist.save( &path ) {
+                tracing::warn!("Failed to save _last.m3u: {e}");
+            }
 
             let session = horikawa_core::SessionState {
                 playlist_name: "_last".to_string(),
@@ -1046,7 +1050,11 @@ impl CommandProcessor {
                 repeat: playlist.repeat(),
                 volume: self.player.volume(),
             };
-            let _ = Playlist::save_session( &session );
+            if let Err(e) = Playlist::save_session( &session ) {
+                tracing::warn!("Failed to save session: {e}");
+            }
+        } else {
+            tracing::warn!("ensure_playlist_dir() failed, session not saved");
         }
     }
 
