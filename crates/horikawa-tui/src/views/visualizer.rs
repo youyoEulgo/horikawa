@@ -234,33 +234,33 @@ pub fn draw_vis_spectrum(lines: &mut Vec<Line<'static>>, data: &[f32], height: u
 pub fn draw_vis_waveform(lines: &mut Vec<Line<'static>>, data: &[f32], height: usize, width: usize) {
     let center_row = height / 2;
 
-    // Build the waveform grid
+    // Build the waveform grid — two passes: first compute column data,
+    // then fill grid row-by-row without column-indexing.
     let mut grid: Vec<Vec<char>> = vec![vec![' '; width]; height];
 
-    for x in 0..width {
-        let data_idx = (x * data.len()) / width;
-        let amp = data[data_idx.min(data.len() - 1)];
+    // Pre-compute y value per column
+    let col_y: Vec<usize> = (0..width)
+        .map(|x| {
+            let data_idx = (x * data.len()) / width;
+            let amp = data[data_idx.min(data.len() - 1)];
+            let y_offset = (amp.powf(0.35) * center_row as f32) as isize;
+            (center_row as isize - y_offset).clamp(0, (height - 1) as isize) as usize
+        })
+        .collect();
 
-        // Convert amplitude to y offset from center
-        let y_offset = (amp.powf(0.35) * center_row as f32) as isize;
-        let y = (center_row as isize - y_offset).clamp(0, (height - 1) as isize) as usize;
-
-        grid[y][x] = '●';
-
-        // Draw vertical line from center to point
-        let start_y = center_row.min(y);
-        let end_y = center_row.max(y);
-        for row in start_y..=end_y {
-            if grid[row][x] == ' ' {
-                grid[row][x] = '│';
+    for (row, row_data) in grid.iter_mut().enumerate() {
+        for (col, cell) in row_data.iter_mut().enumerate() {
+            let y = col_y[col];
+            let start_y = center_row.min(y);
+            let end_y = center_row.max(y);
+            if row == y {
+                *cell = '●';
+            } else if row >= start_y && row <= end_y && *cell == ' ' {
+                *cell = '│';
             }
-        }
-    }
-
-    // Draw center line
-    for x in 0..width {
-        if grid[center_row][x] == ' ' {
-            grid[center_row][x] = '─';
+            if row == center_row && *cell == ' ' {
+                *cell = '─';
+            }
         }
     }
 

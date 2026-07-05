@@ -115,7 +115,7 @@ impl Playlist {
     /// Advances to the next track.
     ///
     /// Returns the next track path, or None if at the end (and repeat is off).
-    pub fn next( &mut self ) -> Option<&PathBuf> {
+    pub fn next_track( &mut self ) -> Option<&PathBuf> {
         if self.tracks.is_empty() {
             return None;
         }

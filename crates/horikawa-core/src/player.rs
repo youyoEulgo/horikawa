@@ -531,12 +531,12 @@ impl Player {
     /// Plays the next track in the playlist.
     /// Returns Ok(true) if a track was started, Ok(false) if no next track.
     pub fn play_next(&self) -> Result<bool, PlayerError> {
-        let next_track = {
+        let track = {
             let mut playlist = self.playlist.write().unwrap();
-            playlist.next().cloned()
+            playlist.next_track().cloned()
         };
 
-        if let Some(path) = next_track {
+        if let Some(path) = track {
             self.play(path)?;
             Ok(true)
         } else {

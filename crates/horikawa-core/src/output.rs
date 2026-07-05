@@ -40,8 +40,8 @@ fn hann_window() -> &'static [f32; FFT_SIZE] {
     WINDOW.get_or_init(|| {
         let mut w = [0.0f32; FFT_SIZE];
         let n = FFT_SIZE as f32 - 1.0;
-        for i in 0..FFT_SIZE {
-            w[i] = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / n).cos());
+        for (i, w_i) in w.iter_mut().enumerate() {
+            *w_i = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / n).cos());
         }
         w
     })
@@ -175,14 +175,14 @@ impl SampleBuffer {
         let mut bar_sum = [0.0f32; VIS_BARS];
         let mut bar_count = [0u32; VIS_BARS];
 
-        for k in 0..num_bins {
+        for (k, bin) in buf.iter().enumerate().take(num_bins) {
             // Log-spaced bar index: log10(1 + 9*k/(num_bins-1)) → [0, 1)
             let frac = k as f32 / (num_bins - 1).max(1) as f32;
             let log_frac = (1.0 + 9.0 * frac).log10();
             let bar = (log_frac * VIS_BARS as f32) as usize;
             let bar = bar.min(VIS_BARS - 1);
 
-            let mag = (buf[k].re * buf[k].re + buf[k].im * buf[k].im).sqrt();
+            let mag = (bin.re * bin.re + bin.im * bin.im).sqrt();
             bar_sum[bar] += mag;
             bar_count[bar] += 1;
         }
@@ -269,12 +269,12 @@ impl SampleBuffer {
         let written = if src_ch == out_ch {
             // No conversion needed
             let to_pop = output.len().min(buf.len());
-            for i in 0..to_pop {
-                output[i] = buf.pop_front().unwrap();
+            for out in output[..to_pop].iter_mut() {
+                *out = buf.pop_front().unwrap();
             }
             // Fill remaining with silence
-            for i in to_pop..output.len() {
-                output[i] = 0.0;
+            for out in output[to_pop..].iter_mut() {
+                *out = 0.0;
             }
             to_pop
         } else if src_ch == 1 && out_ch == 2 {
@@ -283,14 +283,14 @@ impl SampleBuffer {
             let available_frames = buf.len() / src_ch;
             let frames_to_process = output_frames.min(available_frames);
 
-            for i in 0..frames_to_process {
+            for chunk in output.chunks_exact_mut(2).take(frames_to_process) {
                 let sample = buf.pop_front().unwrap();
-                output[i * 2] = sample;
-                output[i * 2 + 1] = sample;
+                chunk[0] = sample;
+                chunk[1] = sample;
             }
             // Fill remaining with silence
-            for i in (frames_to_process * out_ch)..output.len() {
-                output[i] = 0.0;
+            for out in output[(frames_to_process * out_ch)..].iter_mut() {
+                *out = 0.0;
             }
             frames_to_process * out_ch
         } else if src_ch == 2 && out_ch == 1 {
@@ -299,14 +299,14 @@ impl SampleBuffer {
             let available_frames = buf.len() / src_ch;
             let frames_to_process = output_frames.min(available_frames);
 
-            for i in 0..frames_to_process {
+            for out in output.iter_mut().take(frames_to_process) {
                 let left = buf.pop_front().unwrap();
                 let right = buf.pop_front().unwrap();
-                output[i] = (left + right) * 0.5;
+                *out = (left + right) * 0.5;
             }
             // Fill remaining with silence
-            for i in frames_to_process..output.len() {
-                output[i] = 0.0;
+            for out in output[frames_to_process..].iter_mut() {
+                *out = 0.0;
             }
             frames_to_process
         } else {
@@ -315,7 +315,7 @@ impl SampleBuffer {
             let available_frames = buf.len() / src_ch;
             let frames_to_process = output_frames.min(available_frames);
 
-            for frame in 0..frames_to_process {
+            for out_frame in output.chunks_exact_mut(out_ch).take(frames_to_process) {
                 // Read source frame
                 let mut src_samples = Vec::with_capacity(src_ch);
                 for _ in 0..src_ch {
@@ -325,16 +325,16 @@ impl SampleBuffer {
                 // Write output frame
                 for ch in 0..out_ch {
                     if ch < src_ch {
-                        output[frame * out_ch + ch] = src_samples[ch];
+                        out_frame[ch] = src_samples[ch];
                     } else {
                         // Duplicate last channel if output has more channels
-                        output[frame * out_ch + ch] = src_samples[src_ch - 1];
+                        out_frame[ch] = src_samples[src_ch - 1];
                     }
                 }
             }
             // Fill remaining with silence
-            for i in (frames_to_process * out_ch)..output.len() {
-                output[i] = 0.0;
+            for out in output[(frames_to_process * out_ch)..].iter_mut() {
+                *out = 0.0;
             }
             frames_to_process * out_ch
         };
@@ -422,8 +422,7 @@ impl AudioOutput {
                 && c.min_sample_rate().0 <= source_sample_rate
                 && c.max_sample_rate().0 >= source_sample_rate
         }) {
-            supported_config
-                .clone()
+            (*supported_config)
                 .with_sample_rate(cpal::SampleRate(source_sample_rate))
                 .config()
         }
@@ -437,8 +436,7 @@ impl AudioOutput {
                 source_channels,
                 supported_config.channels()
             );
-            supported_config
-                .clone()
+            (*supported_config)
                 .with_sample_rate(cpal::SampleRate(source_sample_rate))
                 .config()
         }
