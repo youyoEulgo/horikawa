@@ -10,7 +10,7 @@ use horikawa_core::command;
 use crate::view::ViewMode;
 
 /// Shortcuts popup content for the Help view.
-pub(super) const SHORTCUTS: &str = r#"Help Shortcuts
+pub(crate) const SHORTCUTS: &str = r#"Help Shortcuts
 
   Help:
   j/↓    Scroll Down    k/↑  Scroll Up
@@ -21,7 +21,7 @@ pub(super) const SHORTCUTS: &str = r#"Help Shortcuts
   q      Quit
   "#;
 
-pub(super) fn handle(app: &mut crate::App, code: KeyCode) {
+pub(crate) fn handle(app: &mut crate::App, code: KeyCode) {
     match code {
         KeyCode::Char('q') | KeyCode::Esc | KeyCode::Char('?') => {
             app.view_mode = ViewMode::Playlist;
@@ -46,7 +46,7 @@ pub(super) fn handle(app: &mut crate::App, code: KeyCode) {
     }
 }
 
-pub(super) fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
+pub(crate) fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     let help_text = command::help_text();
     let line_count = help_text.lines().count() as u16;
     let visible_height = area.height.saturating_sub(2);
