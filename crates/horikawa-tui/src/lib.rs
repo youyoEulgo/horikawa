@@ -19,9 +19,8 @@ use std::time::Duration;
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{
-    layout::Alignment,
     prelude::*,
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
+    widgets::{Block, Borders, ListState, Paragraph},
 };
 
 use browser::FileBrowser;
@@ -32,7 +31,7 @@ use horikawa_core::{
     command::{get_next_word_chunk, get_suggestion, DirPlCmd, RepeatModeArg},
     library::LibraryScanner,
     player::PlaybackState,
-    Command, Player, RepeatMode,
+    Command, Player,
 };
 use horikawa_ctl::CommandSender;
 use horikawa_protocol::{AppCommand, StateUpdate};

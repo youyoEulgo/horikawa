@@ -1,7 +1,6 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{prelude::*, style::Color, widgets::{Block, Borders, Paragraph, Wrap}};
 
-use horikawa_core::player::PlaybackState;
 use crate::view::ViewMode;
 pub fn handle(app: &mut crate::App, code: KeyCode, modifiers: KeyModifiers) {
     if app.handle_view_jump(code) {

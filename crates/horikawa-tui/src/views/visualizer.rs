@@ -1,7 +1,6 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     prelude::*,
-    symbols,
     text::Line,
     widgets::{Block, Borders, Paragraph},
 };

@@ -2,14 +2,12 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{
     prelude::*,
     style::Color,
-    symbols,
-    text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, List, ListItem},
 };
 
 use horikawa_core::{RepeatMode, player::PlaybackState};
 use horikawa_protocol::AppCommand;
-use crate::view::{ViewMode, VisualizerStyle};
+use crate::view::ViewMode;
 use crate::popup;
 pub fn handle(app: &mut crate::App, code: KeyCode, modifiers: KeyModifiers) {
     if app.handle_view_jump(code) {
