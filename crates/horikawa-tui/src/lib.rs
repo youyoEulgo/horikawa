@@ -229,6 +229,12 @@ impl App {
         }
     }
 
+    /// Signals the processor to save session and quit, then flags the UI to stop.
+    pub fn quit(&mut self) {
+        self.send_command(AppCommand::Quit);
+        self.should_quit = true;
+    }
+
     /// Updates app state (clears expired messages, detects track changes, syncs settings).
     pub fn tick(&mut self) {
         // Clear expired status messages
@@ -524,7 +530,7 @@ impl App {
         // Global keys (work in any view)
         match code {
             KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                self.should_quit = true;
+                self.quit();
                 return;
             }
             KeyCode::Char('/') => {
@@ -976,7 +982,7 @@ impl App {
                 self.view_mode = ViewMode::Help;
             }
             Command::Quit => {
-                self.should_quit = true;
+                self.quit();
             }
             Command::Save { name } => {
                 self.send_command(AppCommand::SavePlaylist { name });

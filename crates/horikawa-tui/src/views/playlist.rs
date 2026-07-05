@@ -15,7 +15,7 @@ pub fn handle(app: &mut crate::App, code: KeyCode, modifiers: KeyModifiers) {
     }
     match code {
         KeyCode::Char('q') => {
-            app.should_quit = true;
+            app.quit();
         }
         KeyCode::Char(' ') => {
             // Toggle play/pause

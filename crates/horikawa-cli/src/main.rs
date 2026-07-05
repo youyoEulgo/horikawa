@@ -240,6 +240,8 @@ fn main() -> Result<()> {
         horikawa_tui::media_controls::pump_run_loop();
 
         if app.should_quit || quit_signal.load(Ordering::SeqCst) {
+            // Give the processor a moment to handle Quit + save_session
+            std::thread::sleep(Duration::from_millis(150));
             break;
         }
     }
