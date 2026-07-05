@@ -702,7 +702,6 @@ version = "0.1.0"
 dependencies = [
  "cpal",
  "dirs",
- "realfft",
  "rubato",
  "rustfft",
  "serde",

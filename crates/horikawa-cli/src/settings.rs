@@ -51,34 +51,4 @@ impl Settings {
                 Self::default()
             }
         }
-    }
-
-    /// Saves settings to disk.
-    pub fn save(&self) {
-        let path = match Self::settings_path() {
-            Some(p) => p,
-            None => return,
-        };
-
-        // Create parent directory if needed
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                if let Err(e) = fs::create_dir_all(parent) {
-                    tracing::warn!("Failed to create settings directory: {}", e);
-                    return;
-                }
-            }
-        }
-
-        match serde_json::to_string_pretty(self) {
-            Ok(json) => {
-                if let Err(e) = fs::write(&path, json) {
-                    tracing::warn!("Failed to save settings: {}", e);
-                }
-            }
-            Err(e) => {
-                tracing::warn!("Failed to serialize settings: {}", e);
-            }
-        }
-    }
-}
+    }}

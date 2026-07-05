@@ -166,11 +166,6 @@ impl FileBrowser {
         self.apply_filter();
     }
 
-    /// Gets the current filter.
-    pub fn filter(&self) -> &str {
-        &self.filter
-    }
-
     fn apply_filter(&mut self) {
         self.filtered_indices.clear();
 
@@ -300,16 +295,6 @@ impl FileBrowser {
     /// Gets the current directory path.
     pub fn current_dir(&self) -> &Path {
         &self.current_dir
-    }
-
-    /// Gets the total number of visible entries.
-    pub fn len(&self) -> usize {
-        self.filtered_indices.len()
-    }
-
-    /// Returns true if there are no visible entries.
-    pub fn is_empty(&self) -> bool {
-        self.filtered_indices.is_empty()
     }
 
     /// Toggles showing hidden files/directories.
