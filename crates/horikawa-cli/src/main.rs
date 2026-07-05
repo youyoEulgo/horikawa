@@ -3,6 +3,7 @@
 mod cli;
 
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
@@ -175,13 +176,31 @@ fn main() -> Result<()> {
 
     // Daemon mode
     if args.daemon {
+        let daemon_quit = Arc::new(AtomicBool::new(false));
+        {
+            let q = Arc::clone(&daemon_quit);
+            ctrlc::set_handler(move || {
+                q.store(true, Ordering::SeqCst);
+            })?;
+        }
         tracing::info!("Running in daemon mode (headless). Press Ctrl+C to stop.");
-        loop {
+        while !daemon_quit.load(Ordering::SeqCst) {
             std::thread::sleep(Duration::from_secs(1));
         }
+        tracing::info!("Daemon shutting down.");
+        return Ok(());
     }
 
     // --- TUI mode ---
+    // Ctrl+C / SIGTERM handler: set flag, main loop exits gracefully
+    let quit_signal = Arc::new(AtomicBool::new(false));
+    {
+        let q = Arc::clone(&quit_signal);
+        ctrlc::set_handler(move || {
+            q.store(true, Ordering::SeqCst);
+        })?;
+    }
+
     enable_raw_mode()?;
     io::stdout().execute(EnterAlternateScreen)?;
     io::stdout().execute(crossterm::event::EnableMouseCapture)?;
@@ -219,7 +238,7 @@ fn main() -> Result<()> {
 
         horikawa_tui::media_controls::pump_run_loop();
 
-        if app.should_quit {
+        if app.should_quit || quit_signal.load(Ordering::SeqCst) {
             break;
         }
     }

@@ -19,6 +19,7 @@ crossterm.workspace = true
 ratatui.workspace = true
 tokio.workspace = true
 anyhow.workspace = true
+ctrlc.workspace = true
 clap.workspace = true
 dirs.workspace = true
 tracing.workspace = true
