@@ -11,17 +11,12 @@ mod settings;
 mod view;
 mod view_help;
 
-use std::io;
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
 use anyhow::Result;
-use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    ExecutableCommand,
-};
+use crossterm::event::{KeyCode, KeyModifiers, MouseEventKind};
 use ratatui::{
     layout::Alignment,
     prelude::*,
@@ -33,12 +28,12 @@ use input::{InputBuffer, InputMode};
 use view::{ViewMode, VisualizerStyle};
 
 use horikawa_core::{
-    command::{self, get_next_word_chunk, get_suggestion, DirPlCmd, RepeatModeArg},
+    command::{get_next_word_chunk, get_suggestion, DirPlCmd, RepeatModeArg},
     library::LibraryScanner,
     player::PlaybackState,
     Command, Player, RepeatMode,
 };
-use horikawa_ctl::{CommandProcessor, CommandSender, ControlChannel, ProcessorSettings};
+use horikawa_ctl::CommandSender;
 use horikawa_protocol::{AppCommand, StateUpdate};
 
 /// Entry type for the Playlists view.
@@ -1911,7 +1906,6 @@ fn draw_browser(frame: &mut Frame, app: &mut App, area: Rect) {
 
     frame.render_stateful_widget(browser_widget, area, &mut state);
 }
-
 
 fn draw_track_info(frame: &mut Frame, app: &App, area: Rect) {
     let mut lines = Vec::new();

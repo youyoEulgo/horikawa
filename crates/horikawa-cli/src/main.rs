@@ -23,8 +23,25 @@ use horikawa_ctl::{CommandProcessor, ControlChannel, ProcessorSettings};
 use horikawa_tui::{App, PlaylistEntry};
 
 fn main() -> Result<()> {
+    // Log to file so nothing spills into the TUI alternate screen.
+    let log_path = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("horikawa")
+        .join("horikawa.log");
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let log_file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)
+        .unwrap_or_else(|_| {
+            // fallback: /dev/null equivalent
+            std::fs::File::create("/tmp/horikawa.log").unwrap()
+        });
     tracing_subscriber::fmt()
         .with_env_filter("horikawa=info")
+        .with_writer(std::sync::Mutex::new(log_file))
         .init();
 
     let args = Args::parse();

@@ -731,7 +731,6 @@ name = "horikawa-tui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
  "core-foundation",
  "crossterm",
  "dirs",
@@ -746,7 +745,6 @@ dependencies = [
  "souvlaki",
  "tokio",
  "tracing",
- "tracing-subscriber",
  "windows 0.58.0",
 ]
 
