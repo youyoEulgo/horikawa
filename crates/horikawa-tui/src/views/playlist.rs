@@ -5,10 +5,10 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem},
 };
 
-use horikawa_core::{RepeatMode, player::PlaybackState};
-use horikawa_protocol::AppCommand;
-use crate::view::ViewMode;
 use crate::popup;
+use crate::view::ViewMode;
+use horikawa_core::{player::PlaybackState, RepeatMode};
+use horikawa_protocol::AppCommand;
 pub fn handle(app: &mut crate::App, code: KeyCode, modifiers: KeyModifiers) {
     if app.handle_view_jump(code) {
         return;
@@ -119,8 +119,6 @@ pub fn handle(app: &mut crate::App, code: KeyCode, modifiers: KeyModifiers) {
     }
 }
 
-
-
 pub fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     // Store area for mouse hit detection
     app.playlist_area = Some(area);
@@ -207,4 +205,3 @@ pub fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
 
     frame.render_stateful_widget(playlist_widget, area, &mut app.playlist_state);
 }
-

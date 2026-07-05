@@ -71,16 +71,20 @@ pub enum PlayerEvent {
 }
 
 
-/// Wrapper around AudioOutput that allows it to be stored in shared state.
+/// Newtype wrapper to keep the cpal stream alive.
 ///
-/// SAFETY: AudioOutput must only be accessed from the thread where it was created.
-/// The Player ensures this by only accessing the output from the main thread.
-#[allow( dead_code )] // Field is kept alive for its Drop impl which stops the audio stream
-struct AudioOutputHandle( AudioOutput );
+/// Holds no accessible data — exists solely so `Drop` stops the audio stream.
+#[allow(dead_code)]
+struct AudioOutputHandle(AudioOutput);
 
-// SAFETY: We guarantee AudioOutput is only used from the main thread.
-// cpal::Stream's raw pointers are only accessed by the audio callback thread
-// which is managed internally by cpal.
+// SAFETY: cpal::Stream is platform !Send (ALSA requires thread affinity).
+// AudioOutputHandle is stored in Arc<RwLock<Option<PlaybackHandle>>> shared
+// across threads, but the stream is ONLY created, accessed, and dropped from
+// the main thread:
+//   - Created in Player::play() on the main thread
+//   - Dropped in Player::stop() / Drop on the main thread
+//   - The decode thread (spawned in play()) never touches the output field
+// The RwLock<Option<..>> ensures no concurrent access.
 unsafe impl Send for AudioOutputHandle {}
 unsafe impl Sync for AudioOutputHandle {}
 
