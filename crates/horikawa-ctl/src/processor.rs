@@ -996,7 +996,7 @@ impl CommandProcessor {
 
 
     /// Builds track info from a path + player metadata.
-    fn build_track_info( &self, path: &PathBuf ) -> TrackInfo {
+    fn build_track_info( &self, path: &Path ) -> TrackInfo {
         let metadata = self.player.metadata();
         let duration = self.player.duration();
 

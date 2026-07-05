@@ -87,7 +87,7 @@ pub fn draw_now_playing(frame: &mut Frame, app: &crate::App, area: Rect) {
     let vol_str = if vol_pct == 0 {
         "Mute".to_string()
     } else {
-        let blocks = (vol_pct as usize + 9) / 10;
+        let blocks = (vol_pct as u32).div_ceil(10) as usize;
         let bar: String = (0..10)
             .map(|i| if i < blocks { '█' } else { '░' })
             .collect();

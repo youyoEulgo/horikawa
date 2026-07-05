@@ -170,7 +170,7 @@ pub fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     let rel = app.browser.selected_index().saturating_sub(scroll);
     state.select(Some(rel.min(visible_height.saturating_sub(1))));
 
-    let browser_widget = List::new(slice.iter().cloned().collect::<Vec<_>>())
+    let browser_widget = List::new(slice.to_vec())
         .block(Block::default().title(title).borders(Borders::ALL))
         .highlight_style(Style::default().bg(Color::DarkGray))
         .highlight_symbol(">> ");

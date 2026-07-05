@@ -139,17 +139,11 @@ pub struct BrowserSnapshot {
 
 
 /// Snapshot of application settings (for display in frontends).
-#[derive( Debug, Clone, Serialize, Deserialize )]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct SettingsSnapshot {
     pub discord_enabled: bool,
     pub smtc_enabled: bool,
-}
-
-impl Default for SettingsSnapshot {
-    fn default() -> Self {
-        Self { discord_enabled: false, smtc_enabled: false }
-    }
 }
 
 

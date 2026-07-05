@@ -70,11 +70,7 @@ pub fn draw(frame: &mut Frame, app: &crate::App, area: Rect) {
         .enumerate()
         .map(|(idx, (name, enabled, locked))| {
             let checkbox = if *locked {
-                if *enabled {
-                    "[-]"
-                } else {
-                    "[-]"
-                }
+                "[-]"
             } else if *enabled {
                 "[x]"
             } else {

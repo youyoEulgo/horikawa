@@ -270,10 +270,11 @@ impl App {
             };
 
             // If the playing track changed (e.g. auto-advance by processor), scroll to it
-            if playlist_index.is_some() && self.player.state() == PlaybackState::Playing {
-                if current_track != self.last_track {
-                    self.scroll_to_playing = true;
-                }
+            if playlist_index.is_some()
+                && self.player.state() == PlaybackState::Playing
+                && current_track != self.last_track
+            {
+                self.scroll_to_playing = true;
             }
             self.last_track = current_track;
         }
@@ -675,7 +676,7 @@ impl App {
                 };
                 let lines = shortcuts.lines().count() as u16 + 2; // +2 for borders
                 self.popup_state = Some(popup::PopupState::new_confirm_tall(
-                    format!("Shortcuts"),
+                    "Shortcuts".to_string(),
                     shortcuts.to_string(),
                     popup::PendingAction::None,
                     lines,

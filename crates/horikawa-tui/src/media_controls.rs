@@ -455,7 +455,6 @@ pub fn pump_run_loop() {
 pub fn pump_run_loop() {}
 
 /// Creates a channel for media control events.
-
 /// Creates a channel for media control events.
 pub fn create_media_controls_channel() -> (
     mpsc::Sender<MediaControlCommand>,

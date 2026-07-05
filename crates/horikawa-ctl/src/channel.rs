@@ -65,8 +65,15 @@ impl ControlChannel {
             broadcast_tx,
         }
     }
+}
 
+impl Default for ControlChannel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
+impl ControlChannel {
     /// Creates a new `CommandSender` for a frontend client.
     pub fn sender( &self ) -> CommandSender {
         CommandSender {

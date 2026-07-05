@@ -145,7 +145,7 @@ impl Player {
 
         let source_sample_rate = decoder.sample_rate();
         let channels = decoder.channels() as u16;
-        let duration = decoder.duration().map(|secs| Duration::from_secs_f64(secs));
+        let duration = decoder.duration().map(Duration::from_secs_f64);
         let metadata = decoder.metadata();
 
         // Create audio output - this also creates the sample buffer with proper channel config
@@ -585,7 +585,7 @@ impl Player {
 
         let source_sample_rate = decoder.sample_rate();
         let channels = decoder.channels() as u16;
-        let duration = decoder.duration().map(|secs| Duration::from_secs_f64(secs));
+        let duration = decoder.duration().map(Duration::from_secs_f64);
         let metadata = decoder.metadata();
 
         // Create audio output

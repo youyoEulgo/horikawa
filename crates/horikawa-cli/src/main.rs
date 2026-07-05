@@ -71,14 +71,14 @@ fn main() -> Result<()> {
     } else {
         // Try to load last session
         if let Some(session) = horikawa_core::Playlist::load_session() {
-            session_last_loaded =
-                if let Some(name) = session.playlist_name.strip_prefix("m3u:") {
-                    Some(PlaylistEntry::M3u(name.to_string()))
-                } else if let Some(name) = session.playlist_name.strip_prefix("dirpl:") {
-                    Some(PlaylistEntry::DirPl(name.to_string()))
-                } else {
-                    None
-                };
+            session_last_loaded = session.playlist_name
+                .strip_prefix("m3u:")
+                .map(|n| PlaylistEntry::M3u(n.to_string()))
+                .or_else(|| {
+                    session.playlist_name
+                        .strip_prefix("dirpl:")
+                        .map(|n| PlaylistEntry::DirPl(n.to_string()))
+                });
 
             if let Some(dir) = horikawa_core::Playlist::playlist_dir() {
                 let path = dir.join("_last.m3u");
@@ -109,7 +109,7 @@ fn main() -> Result<()> {
     let start_path = args
         .path
         .clone()
-        .or_else(|| dirs::home_dir())
+        .or_else(dirs::home_dir)
         .unwrap_or_else(|| PathBuf::from("."));
 
     // Create control channel
@@ -158,8 +158,7 @@ fn main() -> Result<()> {
             #[cfg(target_os = "macos")]
             smtc_enabled: false,
             #[cfg(not(target_os = "macos"))]
-            smtc_enabled: integrations_smtc,
-            ..ProcessorSettings::default()
+            smtc_enabled: integrations_smtc
         };
         std::thread::Builder::new()
             .name("horikawa-integrations".to_string())

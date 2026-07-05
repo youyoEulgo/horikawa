@@ -103,7 +103,7 @@ pub fn draw_vis_bars(lines: &mut Vec<Line<'static>>, data: &[f32], height: usize
         1
     };
     let gap = 1u16;
-    let total_per_bar = (bw + gap) as u16;
+    let total_per_bar = bw + gap;
     let num_bars = (width as u16 / total_per_bar)
         .min(data.len().max(1) as u16)
         .max(1) as usize;
@@ -162,7 +162,7 @@ pub fn draw_vis_spectrum(lines: &mut Vec<Line<'static>>, data: &[f32], height: u
         1
     };
     let gap = 1u16;
-    let total_per_bar = (bw + gap) as u16;
+    let total_per_bar = bw + gap;
     let num_bars = (width as u16 / total_per_bar)
         .min(data.len().max(1) as u16)
         .max(1) as usize;
