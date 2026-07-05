@@ -707,11 +707,94 @@ impl App {
         match self.view_mode {
             ViewMode::Playlist => self.handle_playlist_key(code, modifiers),
             ViewMode::Browser => self.handle_browser_key(code),
-            ViewMode::Playlists => self.handle_playlists_key(code),
+            ViewMode::Playlists => self.handle_playlists_key(code, modifiers),
             ViewMode::Help => self.handle_help_key(code),
             ViewMode::TrackInfo => self.handle_track_info_key(code, modifiers),
             ViewMode::Visualizer => self.handle_visualizer_key(code, modifiers),
-            ViewMode::Settings => self.handle_settings_key(code),
+            ViewMode::Settings => self.handle_settings_key(code, modifiers),
+        }
+    }
+
+    /// Shared playback controls: volume, mute, seek, prev/next.
+    /// Returns true if the key was consumed.
+    fn handle_playback_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        match code {
+            KeyCode::Char(' ') => {
+                self.send_command(AppCommand::TogglePlayback);
+                true
+            }
+            KeyCode::Char('+') | KeyCode::Char('=') => {
+                self.volume = (self.volume + 0.05).min(1.0);
+                self.send_command(AppCommand::SetVolume { level: self.volume });
+                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
+                true
+            }
+            KeyCode::Char('-') | KeyCode::Char('_') => {
+                self.volume = (self.volume - 0.05).max(0.0);
+                self.send_command(AppCommand::SetVolume { level: self.volume });
+                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
+                true
+            }
+            KeyCode::Char('m') => {
+                if self.volume > 0.0 {
+                    self.volume = 0.0;
+                    self.set_status("Muted");
+                } else {
+                    self.volume = 1.0;
+                    self.set_status("Volume: 100%");
+                }
+                self.send_command(AppCommand::SetVolume { level: self.volume });
+                true
+            }
+            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos + Duration::from_secs(10);
+                if let Some(duration) = self.player.duration() {
+                    if new_pos < duration {
+                        self.send_command(AppCommand::Seek {
+                            position_secs: new_pos.as_secs_f64(),
+                        });
+                    }
+                }
+                true
+            }
+            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos.saturating_sub(Duration::from_secs(10));
+                self.send_command(AppCommand::Seek {
+                    position_secs: new_pos.as_secs_f64(),
+                });
+                true
+            }
+            KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos + Duration::from_secs(10);
+                if let Some(duration) = self.player.duration() {
+                    if new_pos < duration {
+                        self.send_command(AppCommand::Seek {
+                            position_secs: new_pos.as_secs_f64(),
+                        });
+                    }
+                }
+                true
+            }
+            KeyCode::Left if modifiers.contains(KeyModifiers::CONTROL) => {
+                let pos = self.player.position();
+                let new_pos = pos.saturating_sub(Duration::from_secs(10));
+                self.send_command(AppCommand::Seek {
+                    position_secs: new_pos.as_secs_f64(),
+                });
+                true
+            }
+            KeyCode::Char('h') | KeyCode::Left => {
+                self.play_previous();
+                true
+            }
+            KeyCode::Char('l') | KeyCode::Right => {
+                self.play_next();
+                true
+            }
+            _ => false,
         }
     }
 
@@ -774,56 +857,7 @@ impl App {
             KeyCode::Enter => {
                 self.play_selected();
             }
-            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
-                // Seek forward 10 seconds
-                let pos = self.player.position();
-                let new_pos = pos + Duration::from_secs(10);
-                if let Some(duration) = self.player.duration() {
-                    if new_pos < duration {
-                        self.send_command(AppCommand::Seek {
-                            position_secs: new_pos.as_secs_f64(),
-                        });
-                    }
-                }
-            }
-            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
-                // Seek backward 10 seconds
-                let pos = self.player.position();
-                let new_pos = pos.saturating_sub(Duration::from_secs(10));
-                self.send_command(AppCommand::Seek {
-                    position_secs: new_pos.as_secs_f64(),
-                });
-            }
-            KeyCode::Char('h') => {
-                self.play_previous();
-            }
-            KeyCode::Char('l') => {
-                self.play_next();
-            }
-            KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos + Duration::from_secs(10);
-                if let Some(duration) = self.player.duration() {
-                    if new_pos < duration {
-                        self.send_command(AppCommand::Seek {
-                            position_secs: new_pos.as_secs_f64(),
-                        });
-                    }
-                }
-            }
-            KeyCode::Left if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos.saturating_sub(Duration::from_secs(10));
-                self.send_command(AppCommand::Seek {
-                    position_secs: new_pos.as_secs_f64(),
-                });
-            }
-            KeyCode::Right => {
-                self.play_next();
-            }
-            KeyCode::Left => {
-                self.play_previous();
-            }
+            _ if self.handle_playback_key(code, modifiers) => {}
             KeyCode::Char('c') if self.edit_mode => {
                 self.send_command(AppCommand::ClearPlaylist);
                 self.set_status("Playlist cleared");
@@ -855,29 +889,6 @@ impl App {
                     "Shuffle: {}",
                     if new_shuffle { "on" } else { "off" }
                 ));
-            }
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                // Volume up
-                self.volume = (self.volume + 0.05).min(1.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('-') | KeyCode::Char('_') => {
-                // Volume down
-                self.volume = (self.volume - 0.05).max(0.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('m') => {
-                // Mute/unmute toggle
-                if self.volume > 0.0 {
-                    self.volume = 0.0;
-                    self.set_status("Muted");
-                } else {
-                    self.volume = 1.0;
-                    self.set_status("Volume: 100%");
-                }
-                self.send_command(AppCommand::SetVolume { level: self.volume });
             }
             KeyCode::Char('i') => {
                 // Show track info
@@ -1055,68 +1066,7 @@ impl App {
             KeyCode::Esc => {
                 self.view_mode = ViewMode::Playlist;
             }
-            // Playback controls
-            KeyCode::Char(' ') => {
-                self.send_command(AppCommand::TogglePlayback);
-            }
-            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos + Duration::from_secs(10);
-                if let Some(duration) = self.player.duration() {
-                    if new_pos < duration {
-                        self.send_command(AppCommand::Seek {
-                            position_secs: new_pos.as_secs_f64(),
-                        });
-                    }
-                }
-            }
-            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos.saturating_sub(Duration::from_secs(10));
-                self.send_command(AppCommand::Seek {
-                    position_secs: new_pos.as_secs_f64(),
-                });
-            }
-            KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos + Duration::from_secs(10);
-                if let Some(duration) = self.player.duration() {
-                    if new_pos < duration {
-                        self.send_command(AppCommand::Seek {
-                            position_secs: new_pos.as_secs_f64(),
-                        });
-                    }
-                }
-            }
-            KeyCode::Left if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos.saturating_sub(Duration::from_secs(10));
-                self.send_command(AppCommand::Seek {
-                    position_secs: new_pos.as_secs_f64(),
-                });
-            }
-            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
-            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.volume = (self.volume + 0.05).min(1.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('-') | KeyCode::Char('_') => {
-                self.volume = (self.volume - 0.05).max(0.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('m') => {
-                if self.volume > 0.0 {
-                    self.volume = 0.0;
-                    self.set_status("Muted");
-                } else {
-                    self.volume = 1.0;
-                    self.set_status("Volume: 100%");
-                }
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-            }
+            _ if self.handle_playback_key(code, modifiers) => {}
             _ => {}
         }
     }
@@ -1144,73 +1094,12 @@ impl App {
                     "Spectrum mode: Volume"
                 });
             }
-            // Playback controls
-            KeyCode::Char(' ') => {
-                self.send_command(AppCommand::TogglePlayback);
-            }
-            KeyCode::Char('l') if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos + Duration::from_secs(10);
-                if let Some(duration) = self.player.duration() {
-                    if new_pos < duration {
-                        self.send_command(AppCommand::Seek {
-                            position_secs: new_pos.as_secs_f64(),
-                        });
-                    }
-                }
-            }
-            KeyCode::Char('h') if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos.saturating_sub(Duration::from_secs(10));
-                self.send_command(AppCommand::Seek {
-                    position_secs: new_pos.as_secs_f64(),
-                });
-            }
-            KeyCode::Right if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos + Duration::from_secs(10);
-                if let Some(duration) = self.player.duration() {
-                    if new_pos < duration {
-                        self.send_command(AppCommand::Seek {
-                            position_secs: new_pos.as_secs_f64(),
-                        });
-                    }
-                }
-            }
-            KeyCode::Left if modifiers.contains(KeyModifiers::CONTROL) => {
-                let pos = self.player.position();
-                let new_pos = pos.saturating_sub(Duration::from_secs(10));
-                self.send_command(AppCommand::Seek {
-                    position_secs: new_pos.as_secs_f64(),
-                });
-            }
-            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
-            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.volume = (self.volume + 0.05).min(1.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('-') | KeyCode::Char('_') => {
-                self.volume = (self.volume - 0.05).max(0.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('m') => {
-                if self.volume > 0.0 {
-                    self.volume = 0.0;
-                    self.set_status("Muted");
-                } else {
-                    self.volume = 1.0;
-                    self.set_status("Volume: 100%");
-                }
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-            }
+            _ if self.handle_playback_key(code, modifiers) => {}
             _ => {}
         }
     }
 
-    fn handle_settings_key(&mut self, code: KeyCode) {
+    fn handle_settings_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         // Number of settings items
         const SETTINGS_COUNT: usize = 2;
 
@@ -1250,32 +1139,7 @@ impl App {
                     _ => {}
                 }
             }
-            // Playback controls
-            KeyCode::Char(' ') => {
-                self.send_command(AppCommand::TogglePlayback);
-            }
-            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
-            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.volume = (self.volume + 0.05).min(1.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('-') | KeyCode::Char('_') => {
-                self.volume = (self.volume - 0.05).max(0.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('m') => {
-                if self.volume > 0.0 {
-                    self.volume = 0.0;
-                    self.set_status("Muted");
-                } else {
-                    self.volume = 1.0;
-                    self.set_status("Volume: 100%");
-                }
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-            }
+            _ if self.handle_playback_key(code, modifiers) => {}
             _ => {}
         }
     }
@@ -1856,7 +1720,7 @@ impl App {
     }
 
     /// Handles keyboard input for the Playlists view.
-    fn handle_playlists_key(&mut self, code: KeyCode) {
+    fn handle_playlists_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         if self.handle_view_jump(code) {
             return;
         }
@@ -1916,32 +1780,7 @@ impl App {
                     ));
                 }
             }
-            // Playback controls
-            KeyCode::Char(' ') => {
-                self.send_command(AppCommand::TogglePlayback);
-            }
-            KeyCode::Left | KeyCode::Char('h') => self.play_previous(),
-            KeyCode::Right | KeyCode::Char('l') => self.play_next(),
-            KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.volume = (self.volume + 0.05).min(1.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('-') | KeyCode::Char('_') => {
-                self.volume = (self.volume - 0.05).max(0.0);
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-                self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
-            }
-            KeyCode::Char('m') => {
-                if self.volume > 0.0 {
-                    self.volume = 0.0;
-                    self.set_status("Muted");
-                } else {
-                    self.volume = 1.0;
-                    self.set_status("Volume: 100%");
-                }
-                self.send_command(AppCommand::SetVolume { level: self.volume });
-            }
+            _ if self.handle_playback_key(code, modifiers) => {}
             _ => {}
         }
     }
