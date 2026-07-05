@@ -219,7 +219,9 @@ impl FileBrowser {
             if rel <= Self::SCROLL_MARGIN {
                 self.scroll_offset = self.scroll_offset.saturating_sub(1);
             }
-            if rel >= visible_height.saturating_sub(Self::SCROLL_MARGIN + 1) {
+            if visible_height > Self::SCROLL_MARGIN + 1
+                && rel >= visible_height.saturating_sub(Self::SCROLL_MARGIN + 1)
+            {
                 self.scroll_offset = (self.scroll_offset + 1).min(max);
             }
         }
