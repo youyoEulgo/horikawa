@@ -87,7 +87,7 @@ struct App {
     // Visualizer data source: true = FFT spectrum, false = RMS volume
     spectrum_mode: bool,
 
-    // Volume (0.0 to 1.0)
+    // Volume (0.0 to 1.5), synced from player via VolumeChanged
     volume: f32,
 
     // Flag to scroll to playing track without changing selection
@@ -255,6 +255,9 @@ impl App {
                 Ok(StateUpdate::StatusMessage { message }) => {
                     self.status_message = Some(message);
                     self.status_clear_at = Some(std::time::Instant::now() + Duration::from_secs(3));
+                }
+                Ok(StateUpdate::VolumeChanged { level }) => {
+                    self.volume = level;
                 }
                 Ok(_) => {} // Ignore other updates
                 Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
@@ -724,7 +727,7 @@ impl App {
                 true
             }
             KeyCode::Char('+') | KeyCode::Char('=') => {
-                self.volume = (self.volume + 0.05).min(1.0);
+                self.volume = (self.volume + 0.05).min(1.5);
                 self.send_command(AppCommand::SetVolume { level: self.volume });
                 self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
                 true
@@ -1372,9 +1375,9 @@ impl App {
             Command::Volume { level } => {
                 // Volume command handled below
                 if let Some(level) = level {
-                    self.volume = (level as f32 / 100.0).clamp(0.0, 1.0);
+                    self.volume = (level as f32 / 100.0).clamp(0.0, 1.5);
                     self.send_command(AppCommand::SetVolume { level: self.volume });
-                    self.set_status(format!("Volume: {}%", level.min(100)));
+                    self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
                 } else {
                     self.set_status(format!("Volume: {}%", (self.volume * 100.0) as i32));
                 }
@@ -1481,45 +1484,6 @@ impl App {
                 self.playlist_state.select(Some(new_len - 1));
             }
             self.set_status("Track removed");
-        }
-    }
-
-    /// Saves the current session state for restoration on next startup.
-    fn save_session(&self) {
-        let playlist_arc = self.player.playlist();
-        let playlist = playlist_arc.read().unwrap();
-
-        // Only save if there's something in the playlist
-        if playlist.is_empty() {
-            return;
-        }
-
-        // Save the playlist as "_last"
-        if let Some(dir) = horikawa_core::Playlist::ensure_playlist_dir() {
-            let path = dir.join("_last.m3u");
-            if let Err(e) = playlist.save(&path) {
-                tracing::warn!("Failed to save session playlist: {}", e);
-            }
-        }
-
-        // Encode last_loaded into playlist_name so R key works after restart.
-        // Format: "m3u:<name>", "dirpl:<name>", or "_last" if nothing loaded.
-        let playlist_name = match self.last_loaded {
-            Some(PlaylistEntry::M3u(ref name)) => format!("m3u:{}", name),
-            Some(PlaylistEntry::DirPl(ref name)) => format!("dirpl:{}", name),
-            None => "_last".to_string(),
-        };
-
-        let state = horikawa_core::playlist::SessionState {
-            playlist_name,
-            track_index: playlist.current_index().or(self.playlist_state.selected()),
-            shuffle: playlist.shuffle(),
-            repeat: playlist.repeat(),
-            volume: self.volume,
-        };
-
-        if let Err(e) = horikawa_core::Playlist::save_session(&state) {
-            tracing::warn!("Failed to save session state: {}", e);
         }
     }
 
@@ -1980,8 +1944,6 @@ fn main() -> Result<()> {
         crate::media_controls::pump_run_loop();
 
         if app.should_quit {
-            // Save session before quitting
-            app.save_session();
             break;
         }
     }

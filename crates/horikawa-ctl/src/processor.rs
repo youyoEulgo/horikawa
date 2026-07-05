@@ -471,14 +471,23 @@ impl CommandProcessor {
             }
             AppCommand::SetVolume { level } => {
                 self.player.set_volume( level.clamp( 0.0, 1.5 ) );
+                let _ = self.broadcast_tx.send( StateUpdate::VolumeChanged {
+                    level: self.player.volume(),
+                });
             }
             AppCommand::VolumeUp => {
                 let vol = ( self.player.volume() + 0.05 ).min( 1.5 );
                 self.player.set_volume( vol );
+                let _ = self.broadcast_tx.send( StateUpdate::VolumeChanged {
+                    level: self.player.volume(),
+                });
             }
             AppCommand::VolumeDown => {
                 let vol = ( self.player.volume() - 0.05 ).max( 0.0 );
                 self.player.set_volume( vol );
+                let _ = self.broadcast_tx.send( StateUpdate::VolumeChanged {
+                    level: self.player.volume(),
+                });
             }
 
             // Playlist
