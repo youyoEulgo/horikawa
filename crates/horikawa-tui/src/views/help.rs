@@ -3,11 +3,17 @@
 use crossterm::event::KeyCode;
 use ratatui::{
     prelude::*,
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph, Wrap},
 };
 
 use horikawa_core::command;
+use crate::popup;
 use crate::view::ViewMode;
+
+/// Fixed width for the help popup.
+const HELP_WIDTH: u16 = 60;
+/// Fixed height for the help popup.
+const HELP_HEIGHT: u16 = 24;
 
 /// Shortcuts popup content for the Help view.
 pub(crate) const SHORTCUTS: &str = r#"Help Shortcuts
@@ -49,8 +55,10 @@ pub(crate) fn handle(app: &mut crate::App, code: KeyCode) {
 pub(crate) fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     let help_text = command::help_text();
     let line_count = help_text.lines().count() as u16;
-    let visible_height = area.height.saturating_sub(2);
 
+    let popup_area = popup::centered_rect(HELP_WIDTH, HELP_HEIGHT, area);
+
+    let visible_height = HELP_HEIGHT.saturating_sub(2);
     let max_scroll = line_count.saturating_sub(visible_height);
     if app.help_scroll > max_scroll {
         app.help_scroll = max_scroll;
@@ -59,11 +67,12 @@ pub(crate) fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     let help = Paragraph::new(help_text)
         .block(
             Block::default()
-                .title(" Help (↑↓ scroll, ? or Esc to close) ")
+                .title(" Help (j/k/↑↓ scroll, ?/Esc to close) ")
                 .borders(Borders::ALL),
         )
         .wrap(Wrap { trim: false })
         .scroll((app.help_scroll, 0));
 
-    frame.render_widget(help, area);
+    frame.render_widget(Clear, popup_area);
+    frame.render_widget(help, popup_area);
 }

@@ -90,13 +90,11 @@ impl PopupState {
     }
 }
 
-/// Returns a Rect centered in `parent`, percentage width, absolute height.
-pub fn centered_rect(width_pct: u16, height: u16, parent: Rect) -> Rect {
-    let popup_width = ((parent.width as f32) * (width_pct as f32) / 100.0) as u16;
-    let popup_height = height.min(parent.height);
-    let x = parent.x + (parent.width.saturating_sub(popup_width)) / 2;
-    let y = parent.y + (parent.height.saturating_sub(popup_height)) / 2;
-    Rect::new(x, y, popup_width.min(parent.width), popup_height)
+/// Returns a Rect centered in `parent` with the given absolute width and height.
+pub fn centered_rect(width: u16, height: u16, parent: Rect) -> Rect {
+    let x = parent.x + (parent.width.saturating_sub(width)) / 2;
+    let y = parent.y + (parent.height.saturating_sub(height)) / 2;
+    Rect::new(x, y, width, height)
 }
 
 /// Renders the popup overlay on top of the current view.

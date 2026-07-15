@@ -1405,7 +1405,7 @@ pub fn draw_ui(frame: &mut Frame, app: &mut App) {
         } else {
             5
         };
-        let popup_area = popup::centered_rect(50, height, frame.area());
+        let popup_area = popup::centered_rect(70, height, frame.area());
         popup::draw_popup(frame, popup, popup_area);
     }
 }
