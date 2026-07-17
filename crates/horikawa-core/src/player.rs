@@ -4,7 +4,7 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{mpsc, Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -75,75 +75,10 @@ pub enum PlayerEvent {
     },
 }
 
-/// Newtype wrapper to keep the cpal stream alive.
-///
-/// Holds no accessible output API — exists so `Drop` stops the audio stream.
-#[allow(dead_code)]
-struct AudioOutputHandle {
-    output: AudioOutput,
-    owner_thread_id: thread::ThreadId,
-    owner_thread_name: Option<String>,
-}
-
-impl AudioOutputHandle {
-    fn new(output: AudioOutput) -> Self {
-        let current = thread::current();
-        let owner_thread_id = current.id();
-        let owner_thread_name = current.name().map(str::to_string);
-        tracing::info!(
-            "Audio output created on thread {:?} ({})",
-            owner_thread_id,
-            owner_thread_name.as_deref().unwrap_or("unnamed")
-        );
-        Self {
-            output,
-            owner_thread_id,
-            owner_thread_name,
-        }
-    }
-}
-
-impl Drop for AudioOutputHandle {
-    fn drop(&mut self) {
-        let current = thread::current();
-        let current_thread_id = current.id();
-        let current_thread_name = current.name().unwrap_or("unnamed");
-        if current_thread_id != self.owner_thread_id {
-            tracing::warn!(
-                "Audio output dropped on different thread {:?} ({}) than creator {:?} ({})",
-                current_thread_id,
-                current_thread_name,
-                self.owner_thread_id,
-                self.owner_thread_name.as_deref().unwrap_or("unnamed")
-            );
-        } else {
-            tracing::info!(
-                "Audio output dropped on owner thread {:?} ({})",
-                current_thread_id,
-                current_thread_name
-            );
-        }
-    }
-}
-
-// SAFETY: cpal::Stream is intentionally !Send/!Sync at the cross-platform API
-// layer. Horikawa stores it inside Player, which is shared so non-audio threads
-// can read playback state. In the current architecture, playback mutations are
-// serialized by the command processor thread:
-//   - Created in Player::play() / Player::seek() from the processor thread
-//   - Dropped in Player::stop() / replacement playback from the processor thread
-//   - The decode thread only receives SampleBuffer and never touches AudioOutput
-// AudioOutputHandle records its creator thread and logs if drop happens elsewhere;
-// this is a diagnostic guard, not a substitute for the invariants above.
-unsafe impl Send for AudioOutputHandle {}
-unsafe impl Sync for AudioOutputHandle {}
-
 /// Shared playback state between main thread and decode thread.
 struct PlaybackHandle {
     stop_flag: Arc<AtomicBool>,
     sample_buffer: Arc<SampleBuffer>,
-    #[allow(dead_code)] // Kept alive for its Drop impl which stops the audio stream
-    output: AudioOutputHandle,
     thread: Option<thread::JoinHandle<()>>,
     /// Number of frames (samples / channels) decoded so far
     frames_played: Arc<AtomicU64>,
@@ -156,6 +91,20 @@ struct PlaybackHandle {
     /// Metadata extracted from the audio file
     metadata: AudioMetadata,
 }
+
+struct PlaybackInit {
+    sample_buffer: Arc<SampleBuffer>,
+    sample_rate: u32,
+    duration: Option<Duration>,
+    metadata: AudioMetadata,
+}
+
+type PlaybackThreadInit = (
+    PlaybackInit,
+    Decoder,
+    Option<FastFixedOut<f32>>,
+    AudioOutput,
+);
 
 /// Core audio player.
 pub struct Player {
@@ -186,90 +135,12 @@ impl Player {
 
         tracing::info!("Playing: {:?}", path);
 
-        // Open the decoder
-        let mut decoder = Decoder::open(&path).map_err(|e| PlayerError::FileOpen(e.to_string()))?;
-
-        let source_sample_rate = decoder.sample_rate();
-        let channels = decoder.channels() as u16;
-        let duration = decoder.duration().map(Duration::from_secs_f64);
-        let metadata = decoder.metadata();
-
-        // Create audio output - this also creates the sample buffer with proper channel config
-        let (output, sample_buffer) = AudioOutput::new(source_sample_rate, channels)
-            .map_err(|e| PlayerError::Output(e.to_string()))?;
-
-        // Apply stored volume to new sample buffer
-        let vol = *self.volume.read().unwrap();
-        sample_buffer.set_volume(vol);
-
-        let target_sample_rate = output.sample_rate();
-
-        output
-            .play()
-            .map_err(|e| PlayerError::Output(e.to_string()))?;
-
-        // Create resampler if sample rates don't match
-        let resampler = if source_sample_rate != target_sample_rate {
-            tracing::info!(
-                "Resampling: {} Hz → {} Hz",
-                source_sample_rate,
-                target_sample_rate
-            );
-
-            // Use FastFixedOut which handles variable input sizes
-            let resampler = FastFixedOut::<f32>::new(
-                target_sample_rate as f64 / source_sample_rate as f64,
-                2.0, // max relative input/output size ratio
-                PolynomialDegree::Cubic,
-                1024, // output chunk size
-                channels as usize,
-            )
-            .map_err(|e| PlayerError::Output(format!("Failed to create resampler: {}", e)))?;
-
-            Some(resampler)
-        } else {
-            None
-        };
-
-        // Set up control flags and position tracking
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let frames_played = Arc::new(AtomicU64::new(0));
-        let track_ended = Arc::new(AtomicBool::new(false));
-
-        // Clone for the decode thread
-        let stop_flag_clone = Arc::clone(&stop_flag);
-        let sample_buffer_clone = Arc::clone(&sample_buffer);
-        let state_clone = Arc::clone(&self.state);
-        let frames_played_clone = Arc::clone(&frames_played);
-        let track_ended_clone = Arc::clone(&track_ended);
-
-        // Spawn decode thread
-        let thread = thread::spawn(move || {
-            Self::decode_loop(
-                decoder,
-                sample_buffer_clone,
-                stop_flag_clone,
-                state_clone,
-                resampler,
-                frames_played_clone,
-                track_ended_clone,
-            );
-        });
+        let handle = self.start_playback_thread(path.clone(), None, false)?;
 
         // Store playback handle
         {
             let mut playback = self.playback.write().unwrap();
-            *playback = Some(PlaybackHandle {
-                stop_flag,
-                sample_buffer,
-                output: AudioOutputHandle::new(output),
-                thread: Some(thread),
-                frames_played,
-                sample_rate: source_sample_rate,
-                duration,
-                track_ended,
-                metadata,
-            });
+            *playback = Some(handle);
         }
 
         // Update state
@@ -284,6 +155,154 @@ impl Player {
         }
 
         Ok(())
+    }
+
+    fn start_playback_thread(
+        &self,
+        path: PathBuf,
+        seek_position: Option<Duration>,
+        start_paused: bool,
+    ) -> Result<PlaybackHandle, PlayerError> {
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let frames_played = Arc::new(AtomicU64::new(0));
+        let track_ended = Arc::new(AtomicBool::new(false));
+        let state_clone = Arc::clone(&self.state);
+        let stop_flag_clone = Arc::clone(&stop_flag);
+        let frames_played_clone = Arc::clone(&frames_played);
+        let track_ended_clone = Arc::clone(&track_ended);
+        let volume = *self.volume.read().unwrap();
+        let (init_tx, init_rx) = mpsc::sync_channel(1);
+
+        let thread = thread::Builder::new()
+            .name("horikawa-playback".to_string())
+            .spawn(move || {
+                let init = (|| -> Result<PlaybackThreadInit, PlayerError> {
+                    let mut decoder =
+                        Decoder::open(&path).map_err(|e| PlayerError::FileOpen(e.to_string()))?;
+
+                    if let Some(position) = seek_position {
+                        decoder
+                            .seek(position.as_secs_f64())
+                            .map_err(|e| PlayerError::Decode(e.to_string()))?;
+                    }
+
+                    let source_sample_rate = decoder.sample_rate();
+                    let channels = decoder.channels() as u16;
+                    let duration = decoder.duration().map(Duration::from_secs_f64);
+                    let metadata = decoder.metadata();
+
+                    if let Some(position) = seek_position {
+                        let seek_frames = (position.as_secs_f64() * source_sample_rate as f64) as u64;
+                        frames_played_clone.store(seek_frames, Ordering::Relaxed);
+                    }
+
+                    let (output, sample_buffer) = AudioOutput::new(source_sample_rate, channels)
+                        .map_err(|e| PlayerError::Output(e.to_string()))?;
+                    tracing::info!(
+                        "Audio output created on playback thread {:?} ({})",
+                        thread::current().id(),
+                        thread::current().name().unwrap_or("unnamed")
+                    );
+
+                    sample_buffer.set_volume(volume);
+                    if start_paused {
+                        sample_buffer.set_paused(true);
+                    }
+
+                    let target_sample_rate = output.sample_rate();
+                    output
+                        .play()
+                        .map_err(|e| PlayerError::Output(e.to_string()))?;
+
+                    let resampler = if source_sample_rate != target_sample_rate {
+                        tracing::info!(
+                            "Resampling: {} Hz → {} Hz",
+                            source_sample_rate,
+                            target_sample_rate
+                        );
+                        Some(
+                            FastFixedOut::<f32>::new(
+                                target_sample_rate as f64 / source_sample_rate as f64,
+                                2.0,
+                                PolynomialDegree::Cubic,
+                                1024,
+                                channels as usize,
+                            )
+                            .map_err(|e| PlayerError::Output(format!("Failed to create resampler: {}", e)))?,
+                        )
+                    } else {
+                        None
+                    };
+
+                    Ok((
+                        PlaybackInit {
+                            sample_buffer,
+                            sample_rate: source_sample_rate,
+                            duration,
+                            metadata,
+                        },
+                        decoder,
+                        resampler,
+                        output,
+                    ))
+                })();
+
+                let (init, decoder, resampler, output) = match init {
+                    Ok(init) => init,
+                    Err(e) => {
+                        let _ = init_tx.send(Err(e));
+                        return;
+                    }
+                };
+
+                let sample_buffer = Arc::clone(&init.sample_buffer);
+                if init_tx.send(Ok(init)).is_err() {
+                    return;
+                }
+
+                Self::decode_loop(
+                    decoder,
+                    sample_buffer,
+                    stop_flag_clone,
+                    state_clone,
+                    resampler,
+                    frames_played_clone,
+                    track_ended_clone,
+                );
+                drop(output);
+                tracing::info!(
+                    "Audio output dropped on playback thread {:?} ({})",
+                    thread::current().id(),
+                    thread::current().name().unwrap_or("unnamed")
+                );
+            })
+            .map_err(|e| PlayerError::Output(format!("Failed to spawn playback thread: {}", e)))?;
+
+        let init = match init_rx.recv() {
+            Ok(Ok(init)) => init,
+            Ok(Err(e)) => {
+                let _ = thread.join();
+                return Err(e);
+            }
+            Err(e) => {
+                let _ = thread.join();
+                return Err(PlayerError::Output(format!(
+                    "Playback thread exited during initialization: {}",
+                    e
+                )));
+            }
+        };
+
+        Ok(PlaybackHandle {
+            stop_flag,
+            sample_buffer: init.sample_buffer,
+            thread: Some(thread),
+            frames_played,
+            sample_rate: init.sample_rate,
+            duration: init.duration,
+            track_ended,
+            metadata: init.metadata,
+        })
     }
 
     /// The decode loop that runs in a separate thread.
@@ -620,95 +639,12 @@ impl Player {
         // Reopen and seek
         tracing::info!("Seeking to {:?} in {:?}", position, current_track);
 
-        // Open the decoder
-        let mut decoder =
-            Decoder::open(&current_track).map_err(|e| PlayerError::FileOpen(e.to_string()))?;
-
-        // Seek to position
-        decoder
-            .seek(position.as_secs_f64())
-            .map_err(|e| PlayerError::Decode(e.to_string()))?;
-
-        let source_sample_rate = decoder.sample_rate();
-        let channels = decoder.channels() as u16;
-        let duration = decoder.duration().map(Duration::from_secs_f64);
-        let metadata = decoder.metadata();
-
-        // Create audio output
-        let (output, sample_buffer) = AudioOutput::new(source_sample_rate, channels)
-            .map_err(|e| PlayerError::Output(e.to_string()))?;
-
-        // Apply stored volume to new sample buffer
-        let vol = *self.volume.read().unwrap();
-        sample_buffer.set_volume(vol);
-
-        let target_sample_rate = output.sample_rate();
-
-        output
-            .play()
-            .map_err(|e| PlayerError::Output(e.to_string()))?;
-
-        // Create resampler if sample rates don't match
-        let resampler = if source_sample_rate != target_sample_rate {
-            let resampler = FastFixedOut::<f32>::new(
-                target_sample_rate as f64 / source_sample_rate as f64,
-                2.0,
-                PolynomialDegree::Cubic,
-                1024,
-                channels as usize,
-            )
-            .map_err(|e| PlayerError::Output(format!("Failed to create resampler: {}", e)))?;
-
-            Some(resampler)
-        } else {
-            None
-        };
-
-        // Set up control flags - start with frames_played at the seek position
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let seek_frames = (position.as_secs_f64() * source_sample_rate as f64) as u64;
-        let frames_played = Arc::new(AtomicU64::new(seek_frames));
-        let track_ended = Arc::new(AtomicBool::new(false));
-
-        // Clone for the decode thread
-        let stop_flag_clone = Arc::clone(&stop_flag);
-        let sample_buffer_clone = Arc::clone(&sample_buffer);
-        let state_clone = Arc::clone(&self.state);
-        let frames_played_clone = Arc::clone(&frames_played);
-        let track_ended_clone = Arc::clone(&track_ended);
-
-        // Start paused if we were paused before
-        if !was_playing {
-            sample_buffer.set_paused(true);
-        }
-
-        // Spawn decode thread
-        let thread = thread::spawn(move || {
-            Self::decode_loop(
-                decoder,
-                sample_buffer_clone,
-                stop_flag_clone,
-                state_clone,
-                resampler,
-                frames_played_clone,
-                track_ended_clone,
-            );
-        });
+        let handle = self.start_playback_thread(current_track.clone(), Some(position), !was_playing)?;
 
         // Store playback handle
         {
             let mut playback = self.playback.write().unwrap();
-            *playback = Some(PlaybackHandle {
-                stop_flag,
-                sample_buffer,
-                output: AudioOutputHandle::new(output),
-                thread: Some(thread),
-                frames_played,
-                sample_rate: source_sample_rate,
-                duration,
-                track_ended,
-                metadata,
-            });
+            *playback = Some(handle);
         }
 
         // Update state
