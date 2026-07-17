@@ -354,7 +354,10 @@ impl CommandProcessor {
             tokio::select! {
                 Some( cmd ) = self.command_rx.recv() => {
                     if matches!( cmd, AppCommand::Quit ) {
-                        tracing::info!("Quit command received, saving session...");
+                        tracing::info!("Quit command received, stopping playback and saving session...");
+                        if let Err( e ) = self.player.stop() {
+                            tracing::warn!( "Failed to stop playback during shutdown: {}", e );
+                        }
                         self.save_session();
                         break;
                     }

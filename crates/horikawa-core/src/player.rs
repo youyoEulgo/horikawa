@@ -77,18 +77,64 @@ pub enum PlayerEvent {
 
 /// Newtype wrapper to keep the cpal stream alive.
 ///
-/// Holds no accessible data — exists solely so `Drop` stops the audio stream.
+/// Holds no accessible output API — exists so `Drop` stops the audio stream.
 #[allow(dead_code)]
-struct AudioOutputHandle(AudioOutput);
+struct AudioOutputHandle {
+    output: AudioOutput,
+    owner_thread_id: thread::ThreadId,
+    owner_thread_name: Option<String>,
+}
 
-// SAFETY: cpal::Stream is platform !Send (ALSA requires thread affinity).
-// AudioOutputHandle is stored in Arc<RwLock<Option<PlaybackHandle>>> shared
-// across threads, but the stream is ONLY created, accessed, and dropped from
-// the main thread:
-//   - Created in Player::play() on the main thread
-//   - Dropped in Player::stop() / Drop on the main thread
-//   - The decode thread (spawned in play()) never touches the output field
-// The RwLock<Option<..>> ensures no concurrent access.
+impl AudioOutputHandle {
+    fn new(output: AudioOutput) -> Self {
+        let current = thread::current();
+        let owner_thread_id = current.id();
+        let owner_thread_name = current.name().map(str::to_string);
+        tracing::info!(
+            "Audio output created on thread {:?} ({})",
+            owner_thread_id,
+            owner_thread_name.as_deref().unwrap_or("unnamed")
+        );
+        Self {
+            output,
+            owner_thread_id,
+            owner_thread_name,
+        }
+    }
+}
+
+impl Drop for AudioOutputHandle {
+    fn drop(&mut self) {
+        let current = thread::current();
+        let current_thread_id = current.id();
+        let current_thread_name = current.name().unwrap_or("unnamed");
+        if current_thread_id != self.owner_thread_id {
+            tracing::warn!(
+                "Audio output dropped on different thread {:?} ({}) than creator {:?} ({})",
+                current_thread_id,
+                current_thread_name,
+                self.owner_thread_id,
+                self.owner_thread_name.as_deref().unwrap_or("unnamed")
+            );
+        } else {
+            tracing::info!(
+                "Audio output dropped on owner thread {:?} ({})",
+                current_thread_id,
+                current_thread_name
+            );
+        }
+    }
+}
+
+// SAFETY: cpal::Stream is intentionally !Send/!Sync at the cross-platform API
+// layer. Horikawa stores it inside Player, which is shared so non-audio threads
+// can read playback state. In the current architecture, playback mutations are
+// serialized by the command processor thread:
+//   - Created in Player::play() / Player::seek() from the processor thread
+//   - Dropped in Player::stop() / replacement playback from the processor thread
+//   - The decode thread only receives SampleBuffer and never touches AudioOutput
+// AudioOutputHandle records its creator thread and logs if drop happens elsewhere;
+// this is a diagnostic guard, not a substitute for the invariants above.
 unsafe impl Send for AudioOutputHandle {}
 unsafe impl Sync for AudioOutputHandle {}
 
@@ -216,7 +262,7 @@ impl Player {
             *playback = Some(PlaybackHandle {
                 stop_flag,
                 sample_buffer,
-                output: AudioOutputHandle(output),
+                output: AudioOutputHandle::new(output),
                 thread: Some(thread),
                 frames_played,
                 sample_rate: source_sample_rate,
@@ -655,7 +701,7 @@ impl Player {
             *playback = Some(PlaybackHandle {
                 stop_flag,
                 sample_buffer,
-                output: AudioOutputHandle(output),
+                output: AudioOutputHandle::new(output),
                 thread: Some(thread),
                 frames_played,
                 sample_rate: source_sample_rate,
