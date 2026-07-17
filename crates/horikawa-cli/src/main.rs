@@ -3,8 +3,9 @@
 mod cli;
 
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::panic;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(target_os = "macos")]
 use std::sync::mpsc;
 use std::sync::Arc;
@@ -22,10 +23,74 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 
 use horikawa_core::{library::LibraryScanner, Player};
 use horikawa_ctl::{CommandProcessor, ControlChannel, ProcessorSettings};
+use horikawa_protocol::AppCommand;
 
 use horikawa_tui::{App, PlaylistEntry};
 
-fn main() -> Result<()> {
+struct TuiGuard {
+    active: bool,
+}
+
+impl TuiGuard {
+    fn activate() -> io::Result<Self> {
+        enable_raw_mode()?;
+        io::stdout().execute(EnterAlternateScreen)?;
+        io::stdout().execute(crossterm::event::EnableMouseCapture)?;
+        Ok(Self { active: true })
+    }
+
+    fn restore(&mut self) {
+        if !self.active {
+            return;
+        }
+        restore_terminal();
+        self.active = false;
+    }
+}
+
+impl Drop for TuiGuard {
+    fn drop(&mut self) {
+        self.restore();
+    }
+}
+
+fn restore_terminal() {
+    let _ = io::stdout().execute(crossterm::event::DisableMouseCapture);
+    let _ = disable_raw_mode();
+    let _ = io::stdout().execute(LeaveAlternateScreen);
+}
+
+fn install_panic_hook() {
+    panic::set_hook(Box::new(|info| {
+        restore_terminal();
+        let location = info
+            .location()
+            .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "non-string panic payload".to_string());
+        tracing::error!(
+            panic.location = %location,
+            panic.message = %payload,
+            backtrace = %std::backtrace::Backtrace::force_capture(),
+            "horikawa panicked"
+        );
+    }));
+}
+
+fn main() {
+    if let Err(e) = run() {
+        restore_terminal();
+        tracing::error!(error = ?e, "horikawa exited with error");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     // Log to file so nothing spills into the TUI alternate screen.
     let log_path = dirs::data_local_dir()
         .unwrap_or_else(|| PathBuf::from("."))
@@ -44,8 +109,13 @@ fn main() -> Result<()> {
         });
     tracing_subscriber::fmt()
         .with_env_filter("horikawa=info")
+        .with_ansi(false)
+        .with_thread_names(true)
+        .with_target(true)
         .with_writer(std::sync::Mutex::new(log_file))
         .init();
+    install_panic_hook();
+    tracing::info!("Horikawa starting; log_path={:?}", log_path);
 
     let args = Args::parse();
 
@@ -139,7 +209,7 @@ fn main() -> Result<()> {
     );
 
     // Spawn command processor
-    std::thread::Builder::new()
+    let processor_handle = std::thread::Builder::new()
         .name("horikawa-processor".to_string())
         .spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -189,6 +259,10 @@ fn main() -> Result<()> {
             std::thread::sleep(Duration::from_secs(1));
         }
         tracing::info!("Daemon shutting down.");
+        let _ = command_sender.try_send(AppCommand::Quit);
+        if processor_handle.join().is_err() {
+            tracing::error!("Command processor thread panicked during daemon shutdown");
+        }
         return Ok(());
     }
 
@@ -202,9 +276,7 @@ fn main() -> Result<()> {
         })?;
     }
 
-    enable_raw_mode()?;
-    io::stdout().execute(EnterAlternateScreen)?;
-    io::stdout().execute(crossterm::event::EnableMouseCapture)?;
+    let mut tui_guard = TuiGuard::activate()?;
 
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
 
@@ -240,16 +312,17 @@ fn main() -> Result<()> {
         horikawa_tui::media_controls::pump_run_loop();
 
         if app.should_quit || quit_signal.load(Ordering::SeqCst) {
-            // Give the processor a moment to handle Quit + save_session
-            std::thread::sleep(Duration::from_millis(150));
+            let _ = app.command_sender.try_send(AppCommand::Quit);
             break;
         }
     }
 
-    // Cleanup
-    io::stdout().execute(crossterm::event::DisableMouseCapture)?;
-    disable_raw_mode()?;
-    io::stdout().execute(LeaveAlternateScreen)?;
+    // Cleanup before waiting so slow shutdown never leaves the terminal in TUI mode.
+    tui_guard.restore();
+
+    if processor_handle.join().is_err() {
+        tracing::error!("Command processor thread panicked during shutdown");
+    }
 
     Ok(())
 }

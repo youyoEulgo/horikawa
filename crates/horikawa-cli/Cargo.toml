@@ -15,6 +15,7 @@ path = "src/main.rs"
 horikawa-tui.workspace = true
 horikawa-core.workspace = true
 horikawa-ctl.workspace = true
+horikawa-protocol.workspace = true
 crossterm.workspace = true
 ratatui.workspace = true
 tokio.workspace = true

@@ -8,6 +8,26 @@ use ratatui::{
 use crate::view::ViewMode;
 use crate::popup;
 use horikawa_protocol::AppCommand;
+
+fn title_for_path(path: &str) -> String {
+    const MAX_CHARS: usize = 50;
+    const TAIL_CHARS: usize = 47;
+
+    if path.chars().count() > MAX_CHARS {
+        let tail: String = path
+            .chars()
+            .rev()
+            .take(TAIL_CHARS)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        format!(" ...{} ", tail)
+    } else {
+        format!(" {} ", path)
+    }
+}
+
 pub fn handle(app: &mut crate::App, code: KeyCode) {
     let visible = crate::App::browser_visible_rows();
     if app.handle_view_jump(code) {
@@ -128,11 +148,7 @@ pub fn handle(app: &mut crate::App, code: KeyCode) {
 
 pub fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     let path_str = app.browser.current_dir().display().to_string();
-    let title = if path_str.len() > 50 {
-        format!(" ...{} ", &path_str[path_str.len() - 47..])
-    } else {
-        format!(" {} ", path_str)
-    };
+    let title = title_for_path(&path_str);
 
     let items: Vec<ListItem> = app
         .browser
@@ -178,3 +194,15 @@ pub fn draw(frame: &mut Frame, app: &mut crate::App, area: Rect) {
     frame.render_stateful_widget(browser_widget, area, &mut state);
 }
 
+#[cfg(test)]
+mod tests {
+    use super::title_for_path;
+
+    #[test]
+    fn title_for_path_truncates_utf8_safely() {
+        let title = title_for_path("/run/media/eulgo/系统/Users/Eulgo/Documents/BaiduSyncdisk/music");
+        assert!(title.starts_with(" ..."));
+        assert!(title.ends_with(" "));
+        assert!(title.contains("系统"));
+    }
+}

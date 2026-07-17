@@ -720,6 +720,7 @@ dependencies = [
  "dirs",
  "horikawa-core",
  "horikawa-ctl",
+ "horikawa-protocol",
  "horikawa-tui",
  "ratatui",
  "tokio",

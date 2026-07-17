@@ -52,6 +52,7 @@ impl FileBrowser {
 
     /// Refreshes the directory listing.
     pub fn refresh(&mut self) -> Result<()> {
+        tracing::info!("Refreshing browser directory: {:?}", self.current_dir);
         self.entries.clear();
         self.filtered_indices.clear();
         self.selected = 0;
@@ -71,44 +72,67 @@ impl FileBrowser {
         let mut dirs = Vec::new();
         let mut files = Vec::new();
 
-        let read_result = fs::read_dir(&self.current_dir);
-        if let Ok(entries) = read_result {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
+        match fs::read_dir(&self.current_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(e) => {
+                            tracing::warn!(
+                                "Failed to read browser entry in {:?}: {}",
+                                self.current_dir,
+                                e
+                            );
+                            continue;
+                        }
+                    };
+                    let path = entry.path();
+                    let name = entry.file_name().to_string_lossy().to_string();
 
-                // Skip hidden files unless show_hidden is enabled
-                if name != ".." && name.starts_with('.') && !self.show_hidden {
-                    continue;
+                    // Skip hidden files unless show_hidden is enabled
+                    if name != ".." && name.starts_with('.') && !self.show_hidden {
+                        continue;
+                    }
+
+                    let is_dir = path.is_dir();
+                    let is_audio = !is_dir && Self::is_audio_file(&path);
+
+                    let browser_entry = BrowserEntry {
+                        path,
+                        name,
+                        is_dir,
+                        is_audio,
+                    };
+
+                    if is_dir {
+                        dirs.push(browser_entry);
+                    } else if is_audio {
+                        files.push(browser_entry);
+                    }
                 }
-
-                let is_dir = path.is_dir();
-                let is_audio = !is_dir && Self::is_audio_file(&path);
-
-                let browser_entry = BrowserEntry {
-                    path,
-                    name,
-                    is_dir,
-                    is_audio,
-                };
-
-                if is_dir {
-                    dirs.push(browser_entry);
-                } else if is_audio {
-                    files.push(browser_entry);
-                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read browser directory {:?}: {}", self.current_dir, e);
+                return Err(e.into());
             }
         }
 
         // Sort directories and files separately (case-insensitive)
-        dirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-        files.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        dirs.sort_by_key(|a| a.name.to_lowercase());
+        files.sort_by_key(|a| a.name.to_lowercase());
 
         // Directories first, then files
         self.entries.extend(dirs);
         self.entries.extend(files);
 
         self.apply_filter();
+        tracing::info!(
+            "Browser directory refreshed: {:?}; entries={}, dirs={}, audio_files={}",
+            self.current_dir,
+            self.entries.len(),
+            self.entries.iter().filter(|e| e.is_dir).count(),
+            self.entries.iter().filter(|e| e.is_audio).count()
+        );
         Ok(())
     }
 
@@ -121,9 +145,12 @@ impl FileBrowser {
         };
 
         if canonical.is_dir() {
+            tracing::info!("Browser navigating to directory: {:?}", canonical);
             self.current_dir = canonical;
             self.filter.clear();
             self.refresh()?;
+        } else {
+            tracing::warn!("Browser refused to navigate to non-directory: {:?}", canonical);
         }
         Ok(())
     }

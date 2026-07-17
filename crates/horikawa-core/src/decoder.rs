@@ -206,12 +206,10 @@ impl Decoder {
                                 meta.genre = Some( value );
                             }
                         }
-                        StandardTagKey::Date | StandardTagKey::ReleaseDate => {
-                            if meta.year.is_none() {
-                                // Extract year from date string (e.g., "2023" or "2023-01-15")
-                                if let Some( year_str ) = value.split( '-' ).next() {
-                                    meta.year = year_str.parse().ok();
-                                }
+                        StandardTagKey::Date | StandardTagKey::ReleaseDate if meta.year.is_none() => {
+                            // Extract year from date string (e.g., "2023" or "2023-01-15")
+                            if let Some( year_str ) = value.split( '-' ).next() {
+                                meta.year = year_str.parse().ok();
                             }
                         }
                         _ => {}

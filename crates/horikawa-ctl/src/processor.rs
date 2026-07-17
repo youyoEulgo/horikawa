@@ -145,6 +145,7 @@ impl BrowserState {
 
 
     fn refresh( &mut self ) {
+        tracing::info!( "Refreshing processor browser directory: {:?}", self.current_dir );
         self.entries.clear();
         self.selected = 0;
 
@@ -160,33 +161,60 @@ impl BrowserState {
         let mut dirs = Vec::new();
         let mut files = Vec::new();
 
-        if let Ok( read_dir ) = std::fs::read_dir( &self.current_dir ) {
-            for entry in read_dir.flatten() {
-                let path = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
+        match std::fs::read_dir( &self.current_dir ) {
+            Ok( read_dir ) => {
+                for entry in read_dir {
+                    let entry = match entry {
+                        Ok( entry ) => entry,
+                        Err( e ) => {
+                            tracing::warn!(
+                                "Failed to read processor browser entry in {:?}: {}",
+                                self.current_dir,
+                                e
+                            );
+                            continue;
+                        }
+                    };
+                    let path = entry.path();
+                    let name = entry.file_name().to_string_lossy().to_string();
 
-                if name.starts_with( '.' ) {
-                    continue;
+                    if name.starts_with( '.' ) {
+                        continue;
+                    }
+
+                    let is_dir = path.is_dir();
+                    let is_audio = !is_dir && Self::is_audio_file( &path );
+
+                    let browser_entry = BrowserEntryInternal { path, name, is_dir, is_audio };
+
+                    if is_dir {
+                        dirs.push( browser_entry );
+                    } else if is_audio {
+                        files.push( browser_entry );
+                    }
                 }
-
-                let is_dir = path.is_dir();
-                let is_audio = !is_dir && Self::is_audio_file( &path );
-
-                let browser_entry = BrowserEntryInternal { path, name, is_dir, is_audio };
-
-                if is_dir {
-                    dirs.push( browser_entry );
-                } else if is_audio {
-                    files.push( browser_entry );
-                }
+            }
+            Err( e ) => {
+                tracing::warn!(
+                    "Failed to read processor browser directory {:?}: {}",
+                    self.current_dir,
+                    e
+                );
             }
         }
 
-        dirs.sort_by( |a, b| a.name.to_lowercase().cmp( &b.name.to_lowercase() ) );
-        files.sort_by( |a, b| a.name.to_lowercase().cmp( &b.name.to_lowercase() ) );
+        dirs.sort_by_key( |a| a.name.to_lowercase() );
+        files.sort_by_key( |a| a.name.to_lowercase() );
 
         self.entries.extend( dirs );
         self.entries.extend( files );
+        tracing::info!(
+            "Processor browser directory refreshed: {:?}; entries={}, dirs={}, audio_files={}",
+            self.current_dir,
+            self.entries.len(),
+            self.entries.iter().filter( |e| e.is_dir ).count(),
+            self.entries.iter().filter( |e| e.is_audio ).count()
+        );
     }
 
 
@@ -198,8 +226,11 @@ impl BrowserState {
         };
 
         if canonical.is_dir() {
+            tracing::info!( "Processor browser navigating to directory: {:?}", canonical );
             self.current_dir = canonical;
             self.refresh();
+        } else {
+            tracing::warn!( "Processor browser refused to navigate to non-directory: {:?}", canonical );
         }
     }
 

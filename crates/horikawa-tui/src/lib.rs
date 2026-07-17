@@ -469,17 +469,13 @@ impl App {
                     }
                 }
             }
-            MouseEventKind::ScrollUp => {
+            MouseEventKind::ScrollUp if self.view_mode == ViewMode::Playlist => {
                 // Scroll playlist up
-                if self.view_mode == ViewMode::Playlist {
-                    self.playlist_select_previous();
-                }
+                self.playlist_select_previous();
             }
-            MouseEventKind::ScrollDown => {
+            MouseEventKind::ScrollDown if self.view_mode == ViewMode::Playlist => {
                 // Scroll playlist down
-                if self.view_mode == ViewMode::Playlist {
-                    self.playlist_select_next();
-                }
+                self.playlist_select_next();
             }
             _ => {}
         }
